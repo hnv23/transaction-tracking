@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Transaction Tracking",
+  "version": "0.2.0",
+  "permissions": ["storage", "tabs", "scripting", "activeTab", "cookies"],
+  "host_permissions": [
+    "*://*.acb.com.vn/*",
+    "*://*.vpbank.com.vn/*",
+    "*://*.tpb.vn/*",
+    "*://*.techcombank.com.vn/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
