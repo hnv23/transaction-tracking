@@ -1,3 +1,4 @@
+// ==================== Utility ====================
 // Constants cho các ngân hàng
 const BANKS = {
   tpbank: {
@@ -76,11 +77,11 @@ function getDefaultToDate() {
   return today.toISOString().split("T")[0]; // YYYY-MM-DD
 }
 
-// Helper: Lấy ngày mặc định (7 ngày trước)
+// Helper: Lấy ngày mặc định (1 ngày trước)
 function getDefaultFromDate() {
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  return sevenDaysAgo.toISOString().split("T")[0]; // YYYY-MM-DD
+  const oneDayAgo = new Date();
+  oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+  return oneDayAgo.toISOString().split("T")[0]; // YYYY-MM-DD
 }
 
 // Helper: Convert date từ YYYY-MM-DD sang YYYYMMDD (cho TPBank)
@@ -88,6 +89,11 @@ function formatDateForTPBank(dateString) {
   return dateString.replace(/-/g, "");
 }
 
+function formatDateForVPBank(dateString) {
+  return dateString + "T00:00:00";
+}
+
+// ==================== Xử lý nghiệp vụ ====================
 // TPBank: Logic login (dựa trên code hiện có)
 async function loginTPBank(account) {
   const { username, password, accountNumber } = account;
@@ -110,7 +116,6 @@ async function loginTPBank(account) {
         "Accept-Language": "en-US,en;q=0.9",
         Connection: "keep-alive",
         "Content-Type": "application/json",
-        // DEVICE_ID: deviceId,
         DEVICE_NAME: "Chrome",
         Origin: "https://ebank.tpb.vn",
         PLATFORM_NAME: "WEB",
@@ -136,6 +141,10 @@ async function loginTPBank(account) {
 
   if (!response.ok) throw new Error(`Login failed: ${response.status}`);
   const data = await response.json();
+
+  // xử lý lấy lịch sử giao dịch
+  fetchTPBankTransactions({ accessToken: data.access_token, accountNumber });
+
   return { accessToken: data.access_token, expiresIn: data.expires_in || 900 };
 }
 
@@ -184,7 +193,6 @@ async function fetchTPBankTransactions(account) {
           APP_VERSION: "2025.09.12",
           Accept: "application/json, text/plain, */*",
           Authorization: `Bearer ${accessToken}`,
-          device_id: "crCJMJckMoUzQcLw5Vew88SGnUAEdhTy1DViZezXmTaXj",
           "Accept-Language": "en-US,en;q=0.9",
           Connection: "keep-alive",
           "Content-Type": "application/json",
@@ -217,7 +225,7 @@ async function fetchTPBankTransactions(account) {
 
     // Xử lý đẩy dữ liệu lên Google Sheets
     if (data && data.transactionInfos && data.transactionInfos.length > 0) {
-      await exportToGoogleSheets(
+      await exportToGoogleSheetsTpBank(
         data,
         dateSettings.fromDate,
         dateSettings.toDate
@@ -249,11 +257,44 @@ async function fetchACBTransactions(account) {
   /* Logic fetch ACB */ throw new Error("Not implemented");
 }
 async function loginVPBank(account) {
-  /* Logic login VPBank */ throw new Error("Not implemented");
+  // Hiển thị thông báo đang xử lý
+  showTransactionStatus("Đang tải dữ liệu giao dịch VPBank...", "loading");
+
+  // Lấy date settings
+  const dateSettings = await loadDateSettings();
+
+  // Gửi message tới background script
+  const response = await chrome.runtime.sendMessage({
+    action: "transactionHistory",
+    username: account.username,
+    password: account.password,
+    fromDate: dateSettings.fromDate,
+    toDate: dateSettings.toDate,
+  });
+
+  if (response.success) {
+    // Xử lý đẩy dữ liệu lên Google Sheets
+    if (response.transactions && parseInt(response.transactions.count) > 0) {
+      await exportToGoogleSheetsVpBank(
+        response.transactions.data,
+        dateSettings.fromDate,
+        dateSettings.toDate
+      );
+      showTransactionStatus(
+        `Đã tải ${response.transactions.count} giao dịch thành công!`,
+        "success"
+      );
+    } else {
+      showTransactionStatus(
+        "Không có giao dịch nào trong khoảng thời gian này",
+        "info"
+      );
+    }
+
+    return response.data;
+  }
 }
-async function fetchVPBankTransactions(account) {
-  /* Logic fetch VPBank */ throw new Error("Not implemented");
-}
+
 async function loginTechcombank(account) {
   /* Logic login Techcombank */ throw new Error("Not implemented");
 }
@@ -267,16 +308,32 @@ async function fetchTechcombankTransactions(account) {
 async function addAccount(bankId, username, password, accountNumber) {
   const data = await loadBankData();
   if (!data[bankId]) data[bankId] = [];
-  const newAccount = {
-    id: generateAccountId(),
-    username,
-    password,
-    accountNumber,
-    status: "offline",
-    accessToken: null,
-    tokenExpires: null,
-    lastChecked: Date.now(),
-  };
+  let newAccount;
+  if (bankId === "tpbank") {
+    newAccount = {
+      id: generateAccountId(),
+      username,
+      password,
+      accountNumber,
+      status: "offline",
+      accessToken: null,
+      lastChecked: Date.now(),
+    };
+  } else if (bankId === "acb") {
+    // xử lý sau
+  } else if (bankId === "vpbank") {
+    newAccount = {
+      id: generateAccountId(),
+      username,
+      password,
+      accountNumber,
+      status: "offline",
+      lastChecked: Date.now(),
+    };
+  } else if (bankId === "techcombank") {
+    // xử lý sau
+  }
+
   data[bankId].push(newAccount);
   await saveBankData(data);
   renderUI(); // Re-render UI
@@ -301,14 +358,26 @@ function openLoginTab(bankId) {
 async function loadAccount(bankId, account) {
   try {
     let loginResult;
-    if (bankId === "tpbank") loginResult = await loginTPBank(account);
-    // Thêm cho các ngân hàng khác nếu implement
 
-    // Cập nhật status và token
-    account.status = "online";
-    account.accessToken = loginResult.accessToken;
-    account.tokenExpires = Date.now() + loginResult.expiresIn * 1000;
-    account.lastChecked = Date.now();
+    if (bankId === "tpbank") {
+      // gọi thực hiện xử lý TPBank
+      loginResult = await loginTPBank(account);
+      // Cập nhật status và token
+      account.status = "online";
+      account.accessToken = loginResult.accessToken;
+      account.lastChecked = Date.now();
+    } else if (bankId === "acb") {
+      loginResult = await loginACB(account);
+    } else if (bankId === "vpbank") {
+      // gọi thực hiện xử lý VPBank
+      loginResult = await loginVPBank(account);
+      // Cập nhật status
+      account.status = "online";
+      account.lastChecked = Date.now();
+    } else if (bankId === "techcombank") {
+      loginResult = await loginTechcombank(account);
+    }
+    // Thêm cho các ngân hàng khác nếu implement
 
     const data = await loadBankData();
     const bankAccounts = data[bankId];
@@ -319,7 +388,6 @@ async function loadAccount(bankId, account) {
   } catch (error) {
     account.status = "offline";
     account.accessToken = null;
-    account.tokenExpires = null;
     const data = await loadBankData();
     const bankAccounts = data[bankId];
     const index = bankAccounts.findIndex((acc) => acc.id === account.id);
@@ -389,10 +457,13 @@ function showTransactionStatus(message, type = "info") {
 }
 
 // Hàm xử lý đẩy dữ liệu lên Google Sheets
-async function exportToGoogleSheets(data, fromDate, toDate) {
+async function exportToGoogleSheetsTpBank(data, fromDate, toDate) {
   try {
     // Hiển thị thông báo đang xử lý
-    showTransactionStatus("Đang đẩy dữ liệu lên Google Sheets...", "loading");
+    showTransactionStatus(
+      "Đang đẩy dữ liệu tk TPB lên Google Sheets...",
+      "loading"
+    );
 
     if (
       !data ||
@@ -422,7 +493,7 @@ async function exportToGoogleSheets(data, fromDate, toDate) {
     });
 
     // Tạo tên sheet mới từ khoảng thời gian
-    const sheetName = `${fromDate} - ${toDate}`;
+    const sheetName = `TPB-${fromDate}-${toDate}`;
 
     // Gọi Google Sheets API (thông qua API trung gian nếu cần)
     const sheetsApiUrl = "https://n8n.hocduthu.com/webhook/tpbank";
@@ -478,23 +549,15 @@ async function exportToGoogleSheets(data, fromDate, toDate) {
         body: JSON.stringify(payload),
       });
 
-      // Xử lý kết quả từ API
-      const result = await response.json();
-
-      // Kiểm tra kết quả từ API
-      if (!result.success) {
-        throw new Error(`API error: ${result.message || "Unknown error"}`);
-      }
-
-      if (result.success) {
+      // Chỉ kiểm tra status code 200
+      if (response.status === 200) {
         successCount += currentBatch.length;
       } else {
-        throw new Error(
-          `Lỗi khi xử lý batch ${currentBatchNumber}: ${
-            result.message || "Không xác định"
-          }`
-        );
+        console.error("API Error:", response.status);
+        throw new Error(`Lỗi API: ${response.status}`);
       }
+
+      // Success đã được kiểm tra qua status code
 
       // Cập nhật trạng thái hiện tại sau mỗi batch
       if (i + BATCH_SIZE < transactions.length) {
@@ -526,30 +589,131 @@ async function exportToGoogleSheets(data, fromDate, toDate) {
   }
 }
 
-// Nút lấy lịch sử giao dịch
-async function fetchTransactions(bankId, account) {
+async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
   try {
-    if (bankId === "tpbank") {
-      await fetchTPBankTransactions(account);
+    // Hiển thị thông báo đang xử lý
+    showTransactionStatus(
+      "Đang đẩy dữ liệu tk VPBank lên Google Sheets...",
+      "loading"
+    );
+
+    if (!data || !Array.isArray(data)) {
+      throw new Error("Dữ liệu giao dịch không hợp lệ");
     }
-    // Thêm cho các ngân hàng khác
-    // Nếu thành công, giữ status online
+
+    // Chuẩn bị dữ liệu cho Google Sheets
+    const transactions = data.map((transaction, index) => {
+      let transactionType = "UNKNOWN";
+      if (transaction.interbankTrans === "ITOE") {
+        transactionType = "OUT";
+      } else if (transaction.interbankTrans === "IBFT_I_VND") {
+        transactionType = "IN";
+      }
+
+      return {
+        stt: index + 1,
+        reference: transaction.reference,
+        performDate: transaction.performDate,
+        description: transaction.description,
+        transactionType: transactionType,
+        amount: transaction.amount,
+      };
+    });
+
+    // Tạo tên sheet mới từ khoảng thời gian
+    const sheetName = `VPB-${fromDate}-${toDate}`;
+
+    // Gọi Google Sheets API (thông qua API trung gian nếu cần)
+    const sheetsApiUrl = "https://n8n.hocduthu.com/webhook/vpbank";
+
+    // Kích thước batch (số giao dịch mỗi lần gửi)
+    const BATCH_SIZE = 100;
+    let successCount = 0;
+    let totalBatches = Math.ceil(transactions.length / BATCH_SIZE);
+
+    // Xử lý theo batch để tránh timeout và lỗi do kích thước request
+    for (let i = 0; i < transactions.length; i += BATCH_SIZE) {
+      const currentBatch = transactions.slice(i, i + BATCH_SIZE);
+      const currentBatchNumber = Math.floor(i / BATCH_SIZE) + 1;
+
+      // Hiển thị trạng thái cho người dùng
+      showTransactionStatus(
+        `Đang xử lý batch ${currentBatchNumber}/${totalBatches} (${
+          i + 1
+        }-${Math.min(i + BATCH_SIZE, transactions.length)}/${
+          transactions.length
+        } giao dịch)...`,
+        "loading"
+      );
+
+      // Xây dựng payload cho batch hiện tại
+      const payload = {
+        sheetName: sheetName,
+        data: currentBatch,
+        headers: [
+          "STT",
+          "Mã Giao Dịch",
+          "Thời Gian",
+          "Nội Dung",
+          "Loại GD",
+          "Số Tiền",
+        ],
+        isFirstBatch: i === 0, // Đánh dấu batch đầu tiên để tạo sheet và thêm header
+        append: i > 0, // Các batch tiếp theo sẽ append dữ liệu
+      };
+
+      console.log(
+        `Sending batch ${currentBatchNumber}/${totalBatches} to Google Sheets:`,
+        {
+          batchSize: currentBatch.length,
+          totalProcessed: i + currentBatch.length,
+        }
+      );
+
+      // Gọi API thực tế để đẩy dữ liệu lên Google Sheets
+      const response = await fetch(sheetsApiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      // Chỉ kiểm tra status code 200
+      if (response.status === 200) {
+        successCount += currentBatch.length;
+      } else {
+        console.error("API Error:", response.status);
+        throw new Error(`Lỗi API: ${response.status}`);
+      }
+
+      // Success đã được kiểm tra qua status code
+
+      // Cập nhật trạng thái hiện tại sau mỗi batch
+      if (i + BATCH_SIZE < transactions.length) {
+        showTransactionStatus(
+          `Đã xử lý ${successCount}/${
+            transactions.length
+          } giao dịch (${Math.round(
+            (successCount / transactions.length) * 100
+          )}%)...`,
+          "info"
+        );
+      }
+    }
+
+    // Thông báo thành công khi hoàn tất
+    showTransactionStatus(
+      `Đã đẩy thành công ${successCount}/${transactions.length} giao dịch lên Google Sheets!`,
+      "success"
+    );
+
+    return { success: true, message: "Xử lý dữ liệu hoàn tất" };
   } catch (error) {
-    console.error("Error fetching transactions:", error);
-
-    // Hiển thị lỗi lên giao diện
-    showTransactionStatus(`Lỗi khi tải giao dịch: ${error.message}`, "error");
-
-    // Nếu thất bại, chuyển offline và ẩn nút
-    account.status = "offline";
-    account.accessToken = null;
-    account.tokenExpires = null;
-    const data = await loadBankData();
-    const bankAccounts = data[bankId];
-    const index = bankAccounts.findIndex((acc) => acc.id === account.id);
-    bankAccounts[index] = account;
-    await saveBankData(data);
-    renderUI();
+    console.error("Google Sheets Export Error:", error);
+    showTransactionStatus(
+      `Lỗi khi đẩy dữ liệu lên Google Sheets: ${error.message}`,
+      "error"
+    );
+    throw error;
   }
 }
 
@@ -588,7 +752,7 @@ async function renderUI() {
       accNumberSpan.textContent = `Tài khoản: ${account.accountNumber}`;
       accDiv.appendChild(accNumberSpan);
 
-      // Hiển thị trạng thái bằng icon
+      // Hiển thị trạng thái bằng icon (thêm vào accountInfoContainer)
       const statusIcon = document.createElement("i");
       if (account.status === "online") {
         statusIcon.className = "fas fa-circle status-icon online-icon";
@@ -620,16 +784,16 @@ async function renderUI() {
       buttonContainer.appendChild(loadBtn);
 
       // Nút lấy lịch sử (chỉ nếu online)
-      if (account.status === "online") {
-        const fetchBtn = document.createElement("button");
-        fetchBtn.className = "icon-button fetch-btn";
-        fetchBtn.title = "Lấy lịch sử";
-        fetchBtn.innerHTML = '<i class="fas fa-history"></i>';
-        fetchBtn.addEventListener("click", () =>
-          fetchTransactions(bankId, account)
-        );
-        buttonContainer.appendChild(fetchBtn);
-      }
+      // if (account.status === "online") {
+      //   const fetchBtn = document.createElement("button");
+      //   fetchBtn.className = "icon-button fetch-btn";
+      //   fetchBtn.title = "Lấy lịch sử";
+      //   fetchBtn.innerHTML = '<i class="fas fa-history"></i>';
+      //   fetchBtn.addEventListener("click", () =>
+      //     fetchTransactions(bankId, account)
+      //   );
+      //   buttonContainer.appendChild(fetchBtn);
+      // }
 
       // Nút xóa tài khoản
       const deleteBtn = document.createElement("button");
@@ -642,6 +806,25 @@ async function renderUI() {
       buttonContainer.appendChild(deleteBtn);
 
       accDiv.appendChild(buttonContainer);
+
+      // Hiển thị thời gian phiên gần nhất
+      const lastCheckedSpan = document.createElement("span");
+      lastCheckedSpan.className = "last-checked";
+      // Thêm CSS trực tiếp cho chữ nghiêng và nhỏ hơn
+      lastCheckedSpan.style.fontStyle = "italic";
+      lastCheckedSpan.style.fontSize = "0.8rem";
+      lastCheckedSpan.style.color = "#666";
+      lastCheckedSpan.style.display = "block";
+      lastCheckedSpan.style.marginTop = "5px";
+
+      const lastCheckedDate = account.lastChecked
+        ? new Date(account.lastChecked)
+        : null;
+      const lastCheckedText = lastCheckedDate
+        ? `Cập nhật: ${lastCheckedDate.toLocaleDateString()} ${lastCheckedDate.toLocaleTimeString()}`
+        : "Phiên gần nhất: Chưa đăng nhập";
+      lastCheckedSpan.textContent = lastCheckedText;
+      accDiv.appendChild(lastCheckedSpan);
 
       bankSection.appendChild(accDiv);
     });

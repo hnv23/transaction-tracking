@@ -12,7 +12,21 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://neo.vpbank.com.vn/*"],
+      "js": ["contentVpBank.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
-    "default_popup": "popup.html"
-  }
+    "default_popup": "popup.html",
+    "default_title": "Transaction Tracking"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["https://neo.vpbank.com.vn/*"]
+    }
+  ]
 }
