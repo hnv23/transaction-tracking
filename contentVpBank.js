@@ -179,6 +179,37 @@
     return result;
   }
 
+  async function callApiAccountWithDebug(
+    url,
+    method,
+    headers,
+    data,
+    parseResponse
+  ) {
+    sendLogToBackground("log", "Calling account API with debug...", {});
+
+    const result = await callApi(
+      url,
+      method,
+      headers,
+      data,
+      parseResponse,
+      "account"
+    );
+
+    // Nếu có lỗi, debug chi tiết
+    if (result && (!result.ok || result.status >= 400)) {
+      sendLogToBackground("error", "Account API failed, debugging...", {});
+      const debugInfo = await debugErrorResponse(result);
+      sendLogToBackground("error", "Debug info:", debugInfo);
+
+      // Attach debug info to result
+      result.debugInfo = debugInfo;
+    }
+
+    return result;
+  }
+
   async function debugErrorResponse(response) {
     try {
       console.log("=== DEBUGGING ERROR RESPONSE ===");
@@ -306,6 +337,36 @@
             sendLogToBackground(
               "error",
               "API transaction call error:",
+              error.message
+            );
+            sendResponse({ error: error.message });
+          });
+
+        return true; // Giữ message channel mở cho async response
+      }
+
+      // 4. Xử lý yêu cầu gọi API lấy thông tin tài khoản
+      if (request.action === "callApiAccount") {
+        callApiAccountWithDebug(
+          // Sử dụng hàm callApiAccount riêng cho việc gọi API tài khoản
+          request.url,
+          request.method,
+          request.headers,
+          request.data,
+          request.parseResponse
+        )
+          .then((response) => {
+            sendLogToBackground(
+              "log",
+              "API account response status:",
+              response.status
+            );
+            sendResponse({ response: response });
+          })
+          .catch((error) => {
+            sendLogToBackground(
+              "error",
+              "API account call error:",
               error.message
             );
             sendResponse({ error: error.message });

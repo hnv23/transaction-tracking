@@ -145,7 +145,7 @@ async function loginTPBank(account) {
   // xử lý lấy lịch sử giao dịch
   fetchTPBankTransactions({ accessToken: data.access_token, accountNumber });
 
-  return { accessToken: data.access_token, expiresIn: data.expires_in || 900 };
+  return true;
 }
 
 // TPBank: Logic fetch lịch sử giao dịch
@@ -272,7 +272,7 @@ async function loginVPBank(account) {
     toDate: dateSettings.toDate,
   });
 
-  if (response.success) {
+  if (response.success == true) {
     // Xử lý đẩy dữ liệu lên Google Sheets
     if (response.transactions && parseInt(response.transactions.count) > 0) {
       await exportToGoogleSheetsVpBank(
@@ -291,7 +291,13 @@ async function loginVPBank(account) {
       );
     }
 
-    return response.data;
+    return true;
+  } else {
+    showTransactionStatus(
+      "lỗi lấy dữ liệu VPBank: " + (response.message || ""),
+      "error"
+    );
+    return false;
   }
 }
 
@@ -362,18 +368,22 @@ async function loadAccount(bankId, account) {
     if (bankId === "tpbank") {
       // gọi thực hiện xử lý TPBank
       loginResult = await loginTPBank(account);
-      // Cập nhật status và token
-      account.status = "online";
-      account.accessToken = loginResult.accessToken;
-      account.lastChecked = Date.now();
+      if (loginResult) {
+        // Cập nhật status và token
+        account.status = "online";
+        account.accessToken = loginResult.accessToken;
+        account.lastChecked = Date.now();
+      }
     } else if (bankId === "acb") {
       loginResult = await loginACB(account);
     } else if (bankId === "vpbank") {
       // gọi thực hiện xử lý VPBank
       loginResult = await loginVPBank(account);
-      // Cập nhật status
-      account.status = "online";
-      account.lastChecked = Date.now();
+      if (loginResult) {
+        // Cập nhật status
+        account.status = "online";
+        account.lastChecked = Date.now();
+      }
     } else if (bankId === "techcombank") {
       loginResult = await loginTechcombank(account);
     }
