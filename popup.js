@@ -154,7 +154,7 @@ async function fetchTPBankTransactions(account) {
     const { accessToken, accountNumber } = account;
 
     // Hiển thị thông báo đang xử lý
-    showTransactionStatus("Đang tải dữ liệu giao dịch...", "loading");
+    showTransactionStatus("Đang tải dữ liệu giao dịch...", "loading", "tpbank");
 
     // Lấy date settings
     const dateSettings = await loadDateSettings();
@@ -216,7 +216,11 @@ async function fetchTPBankTransactions(account) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("TPBank API Error:", response.status, errorText);
-      showTransactionStatus(`Lỗi kết nối API: ${response.status}`, "error");
+      showTransactionStatus(
+        `Lỗi kết nối API: ${response.status}`,
+        "error",
+        "tpbank"
+      );
       throw new Error(`Fetch transactions failed: ${response.status}`);
     }
 
@@ -232,19 +236,21 @@ async function fetchTPBankTransactions(account) {
       );
       showTransactionStatus(
         `Đã tải ${data.transactionInfos.length} giao dịch thành công!`,
-        "success"
+        "success",
+        "tpbank"
       );
     } else {
       showTransactionStatus(
         "Không có giao dịch nào trong khoảng thời gian này",
-        "info"
+        "info",
+        "tpbank"
       );
     }
 
     return data;
   } catch (error) {
     console.error("Error in fetchTPBankTransactions:", error);
-    showTransactionStatus(`Lỗi: ${error.message}`, "error");
+    showTransactionStatus(`Lỗi: ${error.message}`, "error", "tpbank");
     throw error;
   }
 }
@@ -258,7 +264,11 @@ async function fetchACBTransactions(account) {
 }
 async function loginVPBank(account) {
   // Hiển thị thông báo đang xử lý
-  showTransactionStatus("Đang tải dữ liệu giao dịch VPBank...", "loading");
+  showTransactionStatus(
+    "Đang tải dữ liệu giao dịch VPBank...",
+    "loading",
+    "vpbank"
+  );
 
   // Lấy date settings
   const dateSettings = await loadDateSettings();
@@ -274,20 +284,22 @@ async function loginVPBank(account) {
 
   if (response.success == true) {
     // Xử lý đẩy dữ liệu lên Google Sheets
-    if (response.transactions && parseInt(response.transactions.count) > 0) {
+    if (response.transactions && response.transactions.length > 0) {
       await exportToGoogleSheetsVpBank(
-        response.transactions.data,
+        response.transactions,
         dateSettings.fromDate,
         dateSettings.toDate
       );
       showTransactionStatus(
-        `Đã tải ${response.transactions.count} giao dịch thành công!`,
-        "success"
+        `Đã tải ${response.transactions.length} giao dịch thành công!`,
+        "success",
+        "vpbank"
       );
     } else {
       showTransactionStatus(
         "Không có giao dịch nào trong khoảng thời gian này",
-        "info"
+        "info",
+        "vpbank"
       );
     }
 
@@ -295,7 +307,8 @@ async function loginVPBank(account) {
   } else {
     showTransactionStatus(
       "lỗi lấy dữ liệu VPBank: " + (response.message || ""),
-      "error"
+      "error",
+      "vpbank"
     );
     return false;
   }
@@ -394,7 +407,7 @@ async function loadAccount(bankId, account) {
     const index = bankAccounts.findIndex((acc) => acc.id === account.id);
     bankAccounts[index] = account;
     await saveBankData(data);
-    renderUI(); // Re-render để hiển thị nút lấy lịch sử
+    //renderUI();
   } catch (error) {
     account.status = "offline";
     account.accessToken = null;
@@ -408,17 +421,99 @@ async function loadAccount(bankId, account) {
 }
 
 // Hiển thị trạng thái giao dịch
-function showTransactionStatus(message, type = "info") {
-  // Xóa thông báo cũ nếu có
-  const existingStatus = document.getElementById("transactionStatus");
+// function showTransactionStatus(message, type = "info", bankId = null) {
+//   // Xóa thông báo cũ nếu có
+//   const existingStatus = document.getElementById("transactionStatus");
+//   if (existingStatus) {
+//     existingStatus.remove();
+//   }
+
+//   // Tạo element mới
+//   const statusDiv = document.createElement("div");
+//   statusDiv.id = "transactionStatus";
+//   statusDiv.className = `tran-status ${type}`;
+
+//   // Tạo container riêng cho icon
+//   const iconContainer = document.createElement("span");
+//   iconContainer.className = "status-icon-container";
+//   statusDiv.appendChild(iconContainer);
+
+//   // Tạo icon phù hợp với loại thông báo
+//   const iconElement = document.createElement("i");
+//   switch (type) {
+//     case "error":
+//       iconElement.className = "fas fa-exclamation-circle";
+//       break;
+//     case "success":
+//       iconElement.className = "fas fa-check-circle";
+//       break;
+//     case "loading":
+//       // Biểu tượng tĩnh không có hiệu ứng quay
+//       iconElement.className = "fas fa-clock"; // or "fas fa-hourglass" or another static icon
+//       break;
+//     case "info":
+//     default:
+//       iconElement.className = "fas fa-info-circle";
+//   }
+
+//   // Thêm icon vào container
+//   iconContainer.appendChild(iconElement);
+
+//   // Thêm message text vào div chính (tách biệt với icon)
+//   const messageText = document.createElement("span");
+//   messageText.className = "status-message";
+//   messageText.textContent = message;
+//   statusDiv.appendChild(messageText);
+
+//   // Tìm vị trí hiển thị thông báo
+//   let targetElement = null;
+
+//   if (bankId) {
+//     // Tìm bank category tương ứng với bankId
+//     const bankCategories = document.querySelectorAll(".bank-category");
+//     bankCategories.forEach((category) => {
+//       const h4 = category.querySelector("h4");
+//       if (h4 && h4.textContent === BANKS[bankId].name) {
+//         targetElement = category;
+//       }
+//     });
+//   }
+
+//   // Nếu tìm thấy bank category, thêm thông báo ngay phía trên
+//   if (targetElement) {
+//     targetElement.insertAdjacentElement("beforebegin", statusDiv);
+//   } else {
+//     // Nếu không tìm thấy, thêm vào đầu container như cũ
+//     const container = document.getElementById("bankCategories");
+//     container.insertAdjacentElement("beforebegin", statusDiv);
+//   }
+
+//   // Tự động ẩn thông báo sau 10 giây nếu không phải loading
+//   if (type !== "loading") {
+//     setTimeout(() => {
+//       if (statusDiv && statusDiv.parentNode) {
+//         statusDiv.remove();
+//       }
+//     }, 10000);
+//   }
+// }
+
+// Hiển thị trạng thái giao dịch
+function showTransactionStatus(message, type = "info", bankId = null) {
+  // Tạo ID duy nhất cho mỗi ngân hàng
+  const statusId = bankId ? `transactionStatus-${bankId}` : "transactionStatus";
+
+  // Xóa thông báo cũ của cùng ngân hàng nếu có
+  const existingStatus = document.getElementById(statusId);
   if (existingStatus) {
     existingStatus.remove();
   }
 
   // Tạo element mới
   const statusDiv = document.createElement("div");
-  statusDiv.id = "transactionStatus";
+  statusDiv.id = statusId;
   statusDiv.className = `tran-status ${type}`;
+  statusDiv.setAttribute("data-bank-id", bankId || "");
 
   // Tạo container riêng cho icon
   const iconContainer = document.createElement("span");
@@ -452,9 +547,28 @@ function showTransactionStatus(message, type = "info") {
   messageText.textContent = message;
   statusDiv.appendChild(messageText);
 
-  // Thêm vào đầu container
-  const container = document.getElementById("bankCategories");
-  container.insertAdjacentElement("beforebegin", statusDiv);
+  // Tìm vị trí hiển thị thông báo
+  let targetElement = null;
+
+  if (bankId) {
+    // Tìm bank category tương ứng với bankId
+    const bankCategories = document.querySelectorAll(".bank-category");
+    bankCategories.forEach((category) => {
+      const h4 = category.querySelector("h4");
+      if (h4 && h4.textContent === BANKS[bankId].name) {
+        targetElement = category;
+      }
+    });
+  }
+
+  // Nếu tìm thấy bank category, thêm thông báo ngay phía trên
+  if (targetElement) {
+    targetElement.insertAdjacentElement("beforebegin", statusDiv);
+  } else {
+    // Nếu không tìm thấy, thêm vào đầu container như cũ
+    const container = document.getElementById("bankCategories");
+    container.insertAdjacentElement("beforebegin", statusDiv);
+  }
 
   // Tự động ẩn thông báo sau 10 giây nếu không phải loading
   if (type !== "loading") {
@@ -472,7 +586,8 @@ async function exportToGoogleSheetsTpBank(data, fromDate, toDate) {
     // Hiển thị thông báo đang xử lý
     showTransactionStatus(
       "Đang đẩy dữ liệu tk TPB lên Google Sheets...",
-      "loading"
+      "loading",
+      "tpbank"
     );
 
     if (
@@ -525,7 +640,8 @@ async function exportToGoogleSheetsTpBank(data, fromDate, toDate) {
         }-${Math.min(i + BATCH_SIZE, transactions.length)}/${
           transactions.length
         } giao dịch)...`,
-        "loading"
+        "loading",
+        "tpbank"
       );
 
       // Xây dựng payload cho batch hiện tại
@@ -543,14 +659,6 @@ async function exportToGoogleSheetsTpBank(data, fromDate, toDate) {
         isFirstBatch: i === 0, // Đánh dấu batch đầu tiên để tạo sheet và thêm header
         append: i > 0, // Các batch tiếp theo sẽ append dữ liệu
       };
-
-      console.log(
-        `Sending batch ${currentBatchNumber}/${totalBatches} to Google Sheets:`,
-        {
-          batchSize: currentBatch.length,
-          totalProcessed: i + currentBatch.length,
-        }
-      );
 
       // Gọi API thực tế để đẩy dữ liệu lên Google Sheets
       const response = await fetch(sheetsApiUrl, {
@@ -577,7 +685,8 @@ async function exportToGoogleSheetsTpBank(data, fromDate, toDate) {
           } giao dịch (${Math.round(
             (successCount / transactions.length) * 100
           )}%)...`,
-          "info"
+          "info",
+          "tpbank"
         );
       }
     }
@@ -585,7 +694,8 @@ async function exportToGoogleSheetsTpBank(data, fromDate, toDate) {
     // Thông báo thành công khi hoàn tất
     showTransactionStatus(
       `Đã đẩy thành công ${successCount}/${transactions.length} giao dịch lên Google Sheets!`,
-      "success"
+      "success",
+      "tpbank"
     );
 
     return { success: true, message: "Xử lý dữ liệu hoàn tất" };
@@ -593,7 +703,8 @@ async function exportToGoogleSheetsTpBank(data, fromDate, toDate) {
     console.error("Google Sheets Export Error:", error);
     showTransactionStatus(
       `Lỗi khi đẩy dữ liệu lên Google Sheets: ${error.message}`,
-      "error"
+      "error",
+      "tpbank"
     );
     throw error;
   }
@@ -604,7 +715,8 @@ async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
     // Hiển thị thông báo đang xử lý
     showTransactionStatus(
       "Đang đẩy dữ liệu tk VPBank lên Google Sheets...",
-      "loading"
+      "loading",
+      "vpbank"
     );
 
     if (!data || !Array.isArray(data)) {
@@ -614,19 +726,19 @@ async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
     // Chuẩn bị dữ liệu cho Google Sheets
     const transactions = data.map((transaction, index) => {
       let transactionType = "UNKNOWN";
-      if (transaction.interbankTrans === "ITOE") {
+      if (transaction.Type === "DEBIT") {
         transactionType = "OUT";
-      } else if (transaction.interbankTrans === "IBFT_I_VND") {
+      } else if (transaction.Type === "CREDIT") {
         transactionType = "IN";
       }
 
       return {
         stt: index + 1,
-        reference: transaction.reference,
-        performDate: transaction.performDate,
-        description: transaction.description,
-        transactionType: transactionType,
-        amount: transaction.amount,
+        reference: transaction.ReferenceNumber, // Mã giao dịch
+        performDate: transaction.TRANSDATE, // Thời gian
+        description: transaction.Description, // Nội dung
+        transactionType: transactionType, // Loại GD
+        amount: transaction.Amount, // Số tiền
       };
     });
 
@@ -634,6 +746,7 @@ async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
     const sheetName = `VPB-${fromDate}-${toDate}`;
 
     // Gọi Google Sheets API (thông qua API trung gian nếu cần)
+    // const sheetsApiUrl = "https://n8n.hocduthu.com/webhook-test/vpbank";
     const sheetsApiUrl = "https://n8n.hocduthu.com/webhook/vpbank";
 
     // Kích thước batch (số giao dịch mỗi lần gửi)
@@ -653,7 +766,8 @@ async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
         }-${Math.min(i + BATCH_SIZE, transactions.length)}/${
           transactions.length
         } giao dịch)...`,
-        "loading"
+        "loading",
+        "vpbank"
       );
 
       // Xây dựng payload cho batch hiện tại
@@ -671,14 +785,6 @@ async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
         isFirstBatch: i === 0, // Đánh dấu batch đầu tiên để tạo sheet và thêm header
         append: i > 0, // Các batch tiếp theo sẽ append dữ liệu
       };
-
-      console.log(
-        `Sending batch ${currentBatchNumber}/${totalBatches} to Google Sheets:`,
-        {
-          batchSize: currentBatch.length,
-          totalProcessed: i + currentBatch.length,
-        }
-      );
 
       // Gọi API thực tế để đẩy dữ liệu lên Google Sheets
       const response = await fetch(sheetsApiUrl, {
@@ -705,7 +811,8 @@ async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
           } giao dịch (${Math.round(
             (successCount / transactions.length) * 100
           )}%)...`,
-          "info"
+          "info",
+          "vpbank"
         );
       }
     }
@@ -713,7 +820,8 @@ async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
     // Thông báo thành công khi hoàn tất
     showTransactionStatus(
       `Đã đẩy thành công ${successCount}/${transactions.length} giao dịch lên Google Sheets!`,
-      "success"
+      "success",
+      "vpbank"
     );
 
     return { success: true, message: "Xử lý dữ liệu hoàn tất" };
@@ -721,7 +829,8 @@ async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
     console.error("Google Sheets Export Error:", error);
     showTransactionStatus(
       `Lỗi khi đẩy dữ liệu lên Google Sheets: ${error.message}`,
-      "error"
+      "error",
+      "vpbank"
     );
     throw error;
   }

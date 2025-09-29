@@ -35,28 +35,17 @@ class VPBankAuto {
     this.deviceId = null;
     this.xCsrfToken = null;
     this.tokenKey = null;
-    this.UserProfileID = null;
+    this.AccountID = null;
   }
 
   // Tạo body multipart/mixed cho $batch
-  buildBatchTransferServiceBody({
-    fromISO,
-    toISO,
-    tokenKey = "",
-    csrfToken = "",
-    top,
-    skip,
-  }) {
+  buildBatchAccountsBody({ tokenKey = "", csrfToken = "", top, skip }) {
     // Tạo boundary ngẫu nhiên
-    const boundary = "batch_" + Math.random().toString(36).substring(2, 15);
-
-    // URL encoding theo ví dụ - CHỈ encode những ký tự cần thiết
-    const filterParam = `Status%20eq%20%27COMPLETED%27%20and%20(Date%20ge%20datetime%27${fromISO}%27%20and%20Date%20le%20datetime%27${toISO}%27)`;
-    const selectParam = `FromAccount%2fId%2cFromAccount%2fNickName%2cFromAccount%2fNumber%2cFromAccount%2fNumberMasked%2cFromAccount%2fCurrencyCode%2cToAccount%2fId%2cToAccount%2fNickName%2cToAccount%2fNumber%2cToAccount%2fNumberMasked%2cToAccount%2fCurrencyCode%2cTrackingID%2cFromAccountName%2cToAccountName%2cAmount%2cAmountCurrency%2cDate%2cId%2cRecId%2cCanDelete%2cCanEdit%2cStatus%2cStatusCode%2cTransferType%2cUserAssignedAmount%2cToAmount%2cTransferDestination%2cMemo%2cTransferFlowType%2cFrequencyDisplayName%2cOCBSTATUS`;
-    const expandParam = `FromAccount%2cToAccount`;
+    const boundaryAccounts =
+      "batch_" + Math.random().toString(36).substring(2, 15);
 
     // HTTP request line - CHỈ relative path từ service root
-    const httpRequestLine = `GET Transfers?$skip=${skip}&$top=${top}&$orderby=Date%20desc&$filter=${filterParam}&$expand=${expandParam}&$select=${selectParam}&$inlinecount=allpages HTTP/1.1`;
+    const httpRequestLine = `GET Accounts?$skip=${skip}&$top=${top}&$orderby=AccountGroup%20asc&$filter=ISSUMMARY%20eq%20%27true%27&$inlinecount=allpages HTTP/1.1`;
 
     console.log("HTTP Request Line:", httpRequestLine);
 
@@ -80,8 +69,8 @@ class VPBankAuto {
       .join("\r\n");
 
     // Tạo body theo format chuẩn multipart/mixed
-    const body =
-      `--${boundary}\r\n` +
+    const bodyAccounts =
+      `--${boundaryAccounts}\r\n` +
       `Content-Type: application/http\r\n` +
       `Content-Transfer-Encoding: binary\r\n` +
       `\r\n` +
@@ -89,9 +78,9 @@ class VPBankAuto {
       `${innerHeaders}\r\n` +
       `\r\n` +
       `\r\n` +
-      `--${boundary}--\r\n`;
+      `--${boundaryAccounts}--\r\n`;
 
-    return { boundary, body };
+    return { boundaryAccounts, bodyAccounts };
   }
 
   buildBatchBody({
@@ -99,13 +88,12 @@ class VPBankAuto {
     toISO,
     tokenKey = "",
     csrfToken = "",
-    userProfileID = "",
+    AccountID = "",
   }) {
     // Tạo boundary ngẫu nhiên
     const boundary = "batch_" + Math.random().toString(36).substring(2, 15);
 
-    const httpRequestLine = `GET DepositAccounts('${userProfileID}')?$expand=DepositAccountTransactions&fromDate=${fromISO}&toDate=${toISO} HTTP/1.1`;
-    // const httpRequestLine = `GET GetAccountDetailsByID?Id='%20ZW5je2ZlNWRhMWRmNWEyZWZiM2U1NTUxZmY5NDMyYzc4OTg5fQ%20' HTTP/1.1`;
+    const httpRequestLine = `GET DepositAccounts('${AccountID}')?$expand=DepositAccountTransactions&fromDate=${fromISO}&toDate=${toISO} HTTP/1.1`;
 
     console.log("HTTP Request Line:", httpRequestLine);
 
@@ -246,7 +234,7 @@ class VPBankAuto {
         throw new Error("Không thể khởi tạo session");
       }
 
-      // 2. Thực hiện đăng nhập
+      // =========================== 2. Thực hiện đăng nhập  ===========================
       const url = `${this.baseURL}${this.authAPI}/SecureUsers?action=init`;
       const payload = {
         Id: "",
@@ -296,27 +284,32 @@ class VPBankAuto {
       ) {
         console.log("Đăng nhập thành công");
 
-        // Lấy TokenKey và CSRF token từ response headers
+        // Lấy TokenKey và CSRF token từ response headers của login
         const headers = loginResult.response.headers;
-        this.UserProfileID = JSON.parse(
-          loginResult.response.textContent
-        ).d.UserProfileID; // Lấy UserProfileID từ response
         this.tokenKey = headers["tokenkey"] || headers["TokenKey"] || "";
         this.xCsrfToken = headers["x-csrf-token"] || "";
 
         console.log("TokenKey từ login:", this.tokenKey);
         console.log("CSRF Token từ login:", this.xCsrfToken);
 
-        // Cập nhật cookies
+        // Cập nhật cookies sau khi đăng nhập
         await this.getAllCookies();
+
+        // ============================= 2.5 Gọi API lấy danh sách tài khoản ================================
+        const { boundaryAccounts, bodyAccounts } = this.buildBatchAccountsBody({
+          skip: 0,
+          top: 500,
+          tokenKey: this.tokenKey,
+          csrfToken: this.xCsrfToken,
+        });
 
         const accountMessage = {
           action: "callApiAccount",
-          url: "https://neo.vpbank.com.vn/cb/odata/services/accountservice/",
-          method: "GET",
+          url: "https://neo.vpbank.com.vn/cb/odata/services/accountservice/$batch",
+          method: "POST",
           headers: {
-            "Content-Type": `application/json`,
-            Accept: "application/json",
+            "Content-Type": `multipart/mixed;boundary=${boundaryAccounts}`,
+            Accept: "multipart/mixed",
             Cookie: this.createCookieString(this.cookies),
             Referer: "https://neo.vpbank.com.vn/main.html",
             DataServiceVersion: "2.0",
@@ -330,6 +323,7 @@ class VPBankAuto {
             "Cache-Control": "no-cache",
             Pragma: "no-cache",
           },
+          data: bodyAccounts,
         };
 
         const accountResult = await chrome.tabs.sendMessage(
@@ -340,17 +334,39 @@ class VPBankAuto {
         console.log("=== ACCOUNT RESPONSE ===");
         if (
           accountResult?.response?.status === 200 ||
-          accountResult?.response?.status === 201
+          accountResult?.response?.status === 202
         ) {
-          console.log("Account API call successful:", accountResult);
+          const responseText = accountResult.response.textContent || "";
+          const jsonStart = responseText.indexOf('{"');
+          // Tìm vị trí kết thúc của JSON (dấu } cuối cùng trước batch boundary)
+          const jsonEnd = responseText.lastIndexOf("}}") + 2;
+
+          if (jsonStart === -1 || jsonEnd === -1) {
+            throw new Error("Không tìm thấy JSON trong responseText");
+          }
+
+          // Trích xuất chuỗi JSON
+          const jsonString = responseText.substring(jsonStart, jsonEnd);
+          const accountData = JSON.parse(jsonString);
+
+          if (accountData.error) {
+            // nếu kết quả có lỗi từ server
+            throw new Error(
+              "Lấy danh sách tài khoản thất bại: " +
+                accountData.error.message.value
+            );
+          } else {
+            // Neu không lỗi, lấy AccountID từ tài khoản đầu tiên
+            this.AccountID = accountData?.d?.results?.[0]?.Id || null;
+          }
         } else {
-          console.error("Account API call failed:", accountResult);
+          console.error("Account API call failed:", accountData);
         }
 
-        // Cập nhật cookies
+        // Cập nhật cookies sau khi gọi API tài khoản
         await this.getAllCookies();
 
-        // 3. Tạo batch request cho giao dịch
+        // ============================= 3. Tạo batch request cho giao dịch ================================
         const fromDateObj = new Date(fromDate + "T00:00:00");
         const toDateObj = new Date(toDate + "T23:59:59");
 
@@ -368,48 +384,12 @@ class VPBankAuto {
         const fromISO = encodeURIComponent(formatDateForAPI(fromDateObj));
         const toISO = encodeURIComponent(formatDateForAPI(toDateObj));
 
-        // const { boundary, body } = this.buildBatchTransferServiceBody({
-        //   fromISO,
-        //   toISO,
-        //   top: 200,
-        //   skip: 0,
-        //   tokenKey: this.tokenKey,
-        //   csrfToken: this.xCsrfToken,
-        //   userProfileID: this.UserProfileID,
-        // });
-
-        // // Transaction request với headers chính xác
-        // const transactionUrl = `${this.baseURL}/cb/odata/services/transferservice/$batch`;
-        // const transactionMessage = {
-        //   action: "callApiTransaction",
-        //   url: transactionUrl,
-        //   method: "POST",
-        //   headers: {
-        //     "Content-Type": `multipart/mixed;boundary=${boundary}`,
-        //     Accept: "multipart/mixed",
-        //     Cookie: this.createCookieString(this.cookies),
-        //     Referer: "https://neo.vpbank.com.vn/main.html",
-        //     DataServiceVersion: "2.0",
-        //     MaxDataServiceVersion: "2.0",
-        //     TokenKey: this.tokenKey,
-        //     "x-csrf-token": this.xCsrfToken,
-        //     "device-id": this.deviceId,
-        //     channelType: "Web",
-        //     "sap-contextid-accept": "header",
-        //     "sap-cancel-on-close": "true",
-        //     "Accept-Language": "vi",
-        //     "Cache-Control": "no-cache",
-        //     Pragma: "no-cache",
-        //   },
-        //   data: body,
-        // };
-
         const { boundary, body } = this.buildBatchBody({
           fromISO,
           toISO,
           tokenKey: this.tokenKey,
           csrfToken: this.xCsrfToken,
-          userProfileID: this.UserProfileID,
+          AccountID: this.AccountID,
         });
 
         // Transaction request với headers chính xác
@@ -468,6 +448,8 @@ class VPBankAuto {
           // Trích xuất chuỗi JSON
           const jsonString = responseText.substring(jsonStart, jsonEnd);
           const result = JSON.parse(jsonString);
+          const transactions =
+            result?.d?.DepositAccountTransactions?.results || [];
 
           if (result.error) {
             // nếu kết quả có lỗi từ server
@@ -480,7 +462,7 @@ class VPBankAuto {
             return {
               success: true,
               message: "Đăng nhập và lấy dữ liệu giao dịch thành công",
-              transactions: { count: result.d.__count, data: result.d.results },
+              transactions: transactions,
             };
           }
         } else {
