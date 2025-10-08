@@ -339,7 +339,15 @@ async function addAccount(bankId, username, password, accountNumber) {
       lastChecked: Date.now(),
     };
   } else if (bankId === "acb") {
-    // xử lý sau
+    newAccount = {
+      id: generateAccountId(),
+      username,
+      password,
+      accountNumber,
+      status: "offline",
+      accessToken: null,
+      lastChecked: Date.now(),
+    };
   } else if (bankId === "vpbank") {
     newAccount = {
       id: generateAccountId(),

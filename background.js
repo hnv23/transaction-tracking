@@ -537,4 +537,284 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     return true; // Giữ message channel mở cho async response
   }
+
+  // ==================== PHẦN XỬ LÝ ACB TRONG background.js ====================
+
+  // 4. Xử lý yêu cầu login ACB từ popup
+  if (request.action === "loginACB") {
+    const { username, password } = request;
+
+    console.log("Login ACB request from popup for username:", username);
+
+    chrome.tabs.create(
+      { url: "https://online.acb.com.vn/", active: false },
+      (tab) => {
+        chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+          if (tabId === tab.id && info.status === "complete") {
+            chrome.tabs.onUpdated.removeListener(listener);
+
+            console.log("ACB login tab loaded");
+
+            setTimeout(() => {
+              chrome.tabs.sendMessage(
+                tab.id,
+                {
+                  action: "loginACB",
+                  username,
+                  password,
+                },
+                (response) => {
+                  if (chrome.runtime.lastError) {
+                    console.error(
+                      "Content script error:",
+                      chrome.runtime.lastError
+                    );
+                    sendResponse({
+                      success: false,
+                      message: chrome.runtime.lastError.message,
+                    });
+                    return;
+                  }
+
+                  sendResponse(response);
+
+                  if (response && response.success) {
+                    console.log(
+                      "Login successful, keeping tab open for verification"
+                    );
+                  }
+                }
+              );
+            }, 1500);
+          }
+        });
+      }
+    );
+
+    return true;
+  }
+
+  // 5. Xử lý giải captcha ACB (gửi binary file)
+  if (request.action === "solveCaptchaACB") {
+    const { imageData, mimeType } = request;
+
+    console.log("Solving ACB captcha, image size:", imageData.length, "bytes");
+    console.log("MIME type:", mimeType);
+
+    // Convert array back to Uint8Array, then to Blob
+    const uint8Array = new Uint8Array(imageData);
+    const blob = new Blob([uint8Array], { type: mimeType || "image/jpeg" });
+
+    console.log("Blob created, size:", blob.size);
+
+    // Tạo FormData để gửi file
+    const formData = new FormData();
+    formData.append("image", blob, "captcha.jpg");
+
+    // Gọi API giải captcha với multipart/form-data
+    fetch("https://n8n.hocduthu.com/webhook/captcha-acb", {
+      method: "POST",
+      body: formData, // Không set Content-Type, browser tự động set cho FormData
+    })
+      .then((response) => {
+        console.log("Captcha API response status:", response.status);
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((data) => {
+        console.log("Captcha API response:", data);
+
+        // Xử lý các format response khác nhau
+        const captchaText =
+          data.text || data.result || data.captcha || data.code || data[0].text;
+
+        if (!captchaText) {
+          throw new Error("Không tìm thấy captcha text trong response");
+        }
+
+        console.log("Captcha solved:", captchaText);
+
+        sendResponse({
+          success: true,
+          text: captchaText,
+        });
+      })
+      .catch((error) => {
+        console.error("Captcha API error:", error);
+        sendResponse({
+          success: false,
+          message: error.message,
+        });
+      });
+
+    return true;
+  }
+
+  // 6. Xử lý login và tự động click account ACB (luồng hoàn chỉnh)
+  if (request.action === "loginAndClickACB") {
+    const { accountNumber } = request;
+
+    console.log(`Starting ACB full flow for account: ${accountNumber}`);
+
+    // Lấy thông tin tài khoản từ localStorage trước
+    chrome.storage.local.get(["banks"], (result) => {
+      const banks = result.banks || {};
+      const acbAccounts = banks.acb || [];
+
+      console.log("Total ACB accounts in storage:", acbAccounts.length);
+
+      const account = acbAccounts.find(
+        (acc) => acc.accountNumber === accountNumber
+      );
+
+      if (!account) {
+        console.error(`Account ${accountNumber} not found in storage`);
+        console.log(
+          "Available accounts:",
+          acbAccounts.map((a) => a.accountNumber)
+        );
+        sendResponse({
+          success: false,
+          message: `Không tìm thấy thông tin tài khoản ${accountNumber} trong storage`,
+        });
+        return;
+      }
+
+      console.log(`Found account ${accountNumber} in storage`);
+      console.log("Username:", account.username);
+
+      const { username, password } = account;
+
+      // Tạo hoặc focus tab ACB
+      chrome.tabs.query({ url: "*://online.acb.com.vn/*" }, (tabs) => {
+        let acbTab = tabs[0];
+
+        if (acbTab) {
+          // Focus tab existing
+          chrome.tabs.update(acbTab.id, { active: true }, () => {
+            // Clear ACBFlowState trước khi bắt đầu flow mới
+            chrome.tabs.sendMessage(
+              acbTab.id,
+              { action: "clearACBFlowState" },
+              (clearResponse) => {
+                console.log(
+                  "ACBFlowState cleared on existing tab:",
+                  clearResponse
+                );
+
+                // Sau khi clear xong, bắt đầu flow mới
+                chrome.tabs.sendMessage(
+                  acbTab.id,
+                  {
+                    action: "loginAndClickAccountACB",
+                    username: username,
+                    password: password,
+                    accountNumber: accountNumber,
+                  },
+                  (response) => {
+                    console.log("ACB flow initiated:", response);
+                    sendResponse(response);
+                  }
+                );
+              }
+            );
+          });
+        } else {
+          // Tạo tab mới
+          chrome.tabs.create(
+            {
+              url: "https://online.acb.com.vn/",
+              active: true,
+            },
+            (newTab) => {
+              // Đợi tab load xong
+              chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+                if (tabId === newTab.id && info.status === "complete") {
+                  chrome.tabs.onUpdated.removeListener(listener);
+
+                  // Đợi thêm một chút để đảm bảo content script đã load
+                  setTimeout(() => {
+                    // Clear ACBFlowState trước khi bắt đầu flow mới
+                    chrome.tabs.sendMessage(
+                      newTab.id,
+                      { action: "clearACBFlowState" },
+                      (clearResponse) => {
+                        console.log(
+                          "ACBFlowState cleared on new tab:",
+                          clearResponse
+                        );
+
+                        // Sau khi clear xong, bắt đầu flow mới
+                        chrome.tabs.sendMessage(
+                          newTab.id,
+                          {
+                            action: "loginAndClickAccountACB",
+                            username: username,
+                            password: password,
+                            accountNumber: accountNumber,
+                          },
+                          (response) => {
+                            console.log(
+                              "ACB flow initiated on new tab:",
+                              response
+                            );
+                            sendResponse(response);
+                          }
+                        );
+                      }
+                    );
+                  }, 1000);
+                }
+              });
+            }
+          );
+        }
+      });
+    });
+
+    return true; // Keep channel open
+  }
+
+  // 7. Handler nhận kết quả transactions từ content script (mảng các giao dịch)
+  if (request.action === "acbTransactionsExtracted") {
+    const { accountNumber, transactions, success, message } = request;
+
+    console.log(`ACB transactions extracted for account ${accountNumber}:`, {
+      success,
+      count: transactions?.length || 0,
+    });
+
+    // Lưu transactions vào storage hoặc xử lý tiếp
+    if (success && transactions) {
+      // để xem lên xử lý gì với dữ liệu
+      // chrome.storage.local.get(["acbTransactions"], (result) => {
+      //   const allTransactions = result.acbTransactions || {};
+      //   allTransactions[accountNumber] = {
+      //     transactions: transactions,
+      //     extractedAt: Date.now(),
+      //   };
+      //   chrome.storage.local.set(
+      //     {
+      //       acbTransactions: allTransactions,
+      //     },
+      //     () => {
+      //       console.log(
+      //         `Saved ${transactions.length} transactions for account ${accountNumber}`
+      //       );
+      //       // Có thể gửi notification hoặc update popup
+      //       chrome.runtime.sendMessage({
+      //         action: "acbTransactionsReady",
+      //         accountNumber: accountNumber,
+      //         count: transactions.length,
+      //       });
+      //     }
+      //   );
+      // });
+    }
+
+    return false;
+  }
 });

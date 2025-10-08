@@ -7,7 +7,9 @@
     "*://*.acb.com.vn/*",
     "*://*.vpbank.com.vn/*",
     "*://*.tpb.vn/*",
-    "*://*.techcombank.com.vn/*"
+    "*://*.techcombank.com.vn/*",
+    "https://acb.duckhero.store/*",
+    "https://n8n.hocduthu.com/webhook/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -16,6 +18,16 @@
     {
       "matches": ["https://neo.vpbank.com.vn/*"],
       "js": ["contentVpBank.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://acb.duckhero.store/trigger*"],
+      "js": ["contentTrigger.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://online.acb.com.vn/*"],
+      "js": ["contentACB.js"],
       "run_at": "document_idle"
     }
   ],
