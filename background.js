@@ -26,6 +26,37 @@ const BANKS = [
   },
 ];
 
+// Webhook URL n8n để gửi dữ liệu giao dịch ACB
+async function postToN8N(
+  payload,
+  url = "https://n8n.hocduthu.com/webhook-test/acb"
+) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 30000); // timeout 30s
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await res.text();
+    if (!res.ok)
+      throw new Error(`HTTP ${res.status} ${res.statusText}: ${text}`);
+
+    try {
+      return { ok: true, data: JSON.parse(text) };
+    } catch {
+      return { ok: true, data: text };
+    }
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // Lớp xử lý đăng nhập tự động VPBank
 class VPBankAuto {
   constructor() {
@@ -788,31 +819,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
 
     // Lưu transactions vào storage hoặc xử lý tiếp
-    if (success && transactions) {
-      // để xem lên xử lý gì với dữ liệu
-      // chrome.storage.local.get(["acbTransactions"], (result) => {
-      //   const allTransactions = result.acbTransactions || {};
-      //   allTransactions[accountNumber] = {
-      //     transactions: transactions,
-      //     extractedAt: Date.now(),
-      //   };
-      //   chrome.storage.local.set(
-      //     {
-      //       acbTransactions: allTransactions,
-      //     },
-      //     () => {
-      //       console.log(
-      //         `Saved ${transactions.length} transactions for account ${accountNumber}`
-      //       );
-      //       // Có thể gửi notification hoặc update popup
-      //       chrome.runtime.sendMessage({
-      //         action: "acbTransactionsReady",
-      //         accountNumber: accountNumber,
-      //         count: transactions.length,
-      //       });
-      //     }
-      //   );
-      // });
+    if (success && Array.isArray(transactions)) {
+      const payload = {
+        accountNumber,
+        transactions,
+        success,
+        message: message || null,
+      };
+
+      // fire-and-forget; nếu muốn phản hồi lại content script, dùng sendResponse và return true
+      postToN8N(payload).then((r) => {
+        console.log("Webhook POST -> n8n:", r);
+      });
     }
 
     return false;
