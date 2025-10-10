@@ -811,7 +811,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // 7. Handler nhận kết quả transactions từ content script (mảng các giao dịch)
   if (request.action === "acbTransactionsExtracted") {
-    const { accountNumber, transactions, success, message } = request;
+    const { accountNumber, transactions, fromDate, toDate, success, message } =
+      request;
 
     console.log(`ACB transactions extracted for account ${accountNumber}:`, {
       success,
@@ -822,6 +823,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (success && Array.isArray(transactions)) {
       const payload = {
         accountNumber,
+        fromDate,
+        toDate,
         transactions,
         success,
         message: message || null,

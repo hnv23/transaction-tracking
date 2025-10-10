@@ -537,9 +537,19 @@ async function waitAndGetTransactions(state) {
         await new Promise((r) => setTimeout(r, 2000));
 
         const transactions = await extractTransactions();
+        // Lấy giá trị từ input FromDate và ToDate
+        const fromDateInput = document.querySelector('input[name="FromDate"]');
+        const toDateInput = document.querySelector('input[name="ToDate"]');
+
+        const fromDate = fromDateInput
+          ? fromDateInput.value
+          : state.fromDate || "";
+        const toDate = toDateInput ? toDateInput.value : state.toDate || "";
 
         chrome.runtime.sendMessage({
           action: "acbTransactionsExtracted",
+          fromDate: fromDate,
+          toDate: toDate,
           accountNumber: state.accountNumber,
           transactions: transactions,
           success: true,
