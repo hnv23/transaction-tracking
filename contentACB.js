@@ -26,7 +26,8 @@ const ACBFlowState = {
         case "CLICK_ACCOUNT":
           waitForHomepageAndClickAccount(
             state.accountNumber,
-            state.attemptCount || 0
+            state.attemptCount || 0,
+            state.date
           );
           break;
         case "FILTER_AND_SUBMIT":
@@ -88,11 +89,12 @@ function detectCurrentPage() {
 async function handleLoginAndGetTransactions(
   username,
   password,
-  accountNumber
+  accountNumber,
+  date
 ) {
   try {
     console.log(
-      `Starting full flow: login -> click account ${accountNumber} -> filter -> get transactions`
+      `Starting full flow: login -> click account ${accountNumber} -> filter -> get transactions, date: ${date}`
     );
 
     const currentPage = detectCurrentPage();
@@ -104,6 +106,7 @@ async function handleLoginAndGetTransactions(
           action: "CLICK_ACCOUNT",
           accountNumber: accountNumber,
           username: username,
+          date: date,
           attemptCount: 0,
           startTime: Date.now(),
         });
@@ -117,6 +120,7 @@ async function handleLoginAndGetTransactions(
           ACBFlowState.save({
             action: "FILTER_AND_SUBMIT",
             accountNumber: accountNumber,
+            date: date,
             startTime: Date.now(),
           });
         } else {
@@ -128,11 +132,12 @@ async function handleLoginAndGetTransactions(
 
       case "ACCOUNT_DETAIL_NO_DATA":
         // Trang chi tiết đã load nhưng chưa có data, cần filter và submit
-        await filterAndSubmitByDate();
+        await filterAndSubmitByDate(date);
         // Lưu state để lấy transactions sau khi reload
         ACBFlowState.save({
           action: "GET_TRANSACTIONS",
           accountNumber: accountNumber,
+          date: date,
           startTime: Date.now(),
         });
         break;
@@ -237,27 +242,94 @@ async function clickAccountLink(accountNumber) {
 }
 
 // ========== DATE FILTER AND SUBMIT ==========
-async function filterAndSubmitByDate() {
+async function filterAndSubmitByDate(date) {
   console.log("Filtering by date and submitting...");
 
   // Đợi form load
   await waitForElement('input[name="FromDate"]', 5000);
 
-  // Lấy ngày hiện tại và 1 ngày trước
-  const toDate = new Date();
-  const fromDate = new Date();
-  fromDate.setDate(fromDate.getDate() - 1);
+  // // Lấy ngày hiện tại và 1 ngày trước
+  // const toDate = new Date();
+  // const fromDate = new Date();
+  // fromDate.setDate(fromDate.getDate() - 1);
 
-  // Format ngày dd/mm/yyyy
-  const formatDate = (date) => {
-    const day = String(date.getDate()).padStart(2, "0");
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
+  // // Format ngày dd/mm/yyyy
+  // const formatDate = (date) => {
+  //   const day = String(date.getDate()).padStart(2, "0");
+  //   const month = String(date.getMonth() + 1).padStart(2, "0");
+  //   const year = date.getFullYear();
+  //   return `${day}/${month}/${year}`;
+  // };
 
-  const fromDateStr = formatDate(fromDate);
-  const toDateStr = formatDate(toDate);
+  // const fromDateStr = formatDate(fromDate);
+  // const toDateStr = formatDate(toDate);
+
+  // console.log(`Setting date range: ${fromDateStr} to ${toDateStr}`);
+
+
+  let fromDateStr, toDateStr;
+
+  if (date) {
+    // Nếu có date từ URL, parse và sử dụng
+    try {
+      // Parse date format dd/mm/yyyy
+      const parts = date.split('/');
+      if (parts.length === 3) {
+        const day = parseInt(parts[0]);
+        const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+        const year = parseInt(parts[2]);
+        
+        const targetDate = new Date(year, month, day);
+
+        const formatDate = (d) => {
+          const dd = String(d.getDate()).padStart(2, "0");
+          const mm = String(d.getMonth() + 1).padStart(2, "0");
+          const yyyy = d.getFullYear();
+          return `${dd}/${mm}/${yyyy}`;
+        };
+
+        // Cả fromDate và toDate đều dùng cùng 1 giá trị
+        fromDateStr = formatDate(targetDate);
+        toDateStr = formatDate(targetDate);
+        
+        console.log(`Using date from URL: ${fromDateStr} to ${toDateStr}`);
+      } else {
+        throw new Error("Invalid date format");
+      }
+    } catch (error) {
+      console.error("Error parsing date from URL:", error);
+      // Fallback to default behavior
+      const toDate = new Date();
+      const fromDate = new Date();
+      fromDate.setDate(fromDate.getDate() - 1);
+      
+      const formatDate = (d) => {
+        const dd = String(d.getDate()).padStart(2, "0");
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const yyyy = d.getFullYear();
+        return `${dd}/${mm}/${yyyy}`;
+      };
+      
+      fromDateStr = formatDate(fromDate);
+      toDateStr = formatDate(toDate);
+    }
+  } else {
+    // Nếu không có date, dùng logic cũ (ngày hiện tại và 1 ngày trước)
+    const toDate = new Date();
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 1);
+
+    const formatDate = (d) => {
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    fromDateStr = formatDate(fromDate);
+    toDateStr = formatDate(toDate);
+    console.log("Using default date range (today and yesterday)");
+  }
 
   console.log(`Setting date range: ${fromDateStr} to ${toDateStr}`);
 
@@ -357,13 +429,13 @@ async function extractTransactions() {
         };
 
         transactions.push(transaction);
-        console.log(`Transaction ${transactions.length}:`, transaction);
+        // console.log(`Transaction ${transactions.length}:`, transaction);
       }
     }
   }
 
   console.log(`Successfully extracted ${transactions.length} transactions`);
-  console.table(transactions);
+  // console.table(transactions);
   return transactions;
 }
 
@@ -441,7 +513,7 @@ function waitForElement(selector, timeout = 10000) {
   });
 }
 
-async function waitForHomepageAndClickAccount(accountNumber, attemptCount = 0) {
+async function waitForHomepageAndClickAccount(accountNumber, attemptCount = 0, date = null) {
   try {
     console.log(
       `Waiting for homepage to load and click account ${accountNumber}`
@@ -462,6 +534,7 @@ async function waitForHomepageAndClickAccount(accountNumber, attemptCount = 0) {
           ACBFlowState.save({
             action: "FILTER_AND_SUBMIT",
             accountNumber: accountNumber,
+            date: date,
             startTime: Date.now(),
           });
         } else {
@@ -499,12 +572,13 @@ async function waitAndFilterByDate(state) {
         console.log("Detail page detected, filtering by date...");
         await new Promise((r) => setTimeout(r, 2000));
 
-        await filterAndSubmitByDate();
+        await filterAndSubmitByDate(state.date);
 
         // Sau khi submit, lưu state để lấy transactions
         ACBFlowState.save({
           action: "GET_TRANSACTIONS",
           accountNumber: state.accountNumber,
+          date: state.date,
           startTime: Date.now(),
         });
         return;
@@ -546,14 +620,26 @@ async function waitAndGetTransactions(state) {
           : state.fromDate || "";
         const toDate = toDateInput ? toDateInput.value : state.toDate || "";
 
-        chrome.runtime.sendMessage({
-          action: "acbTransactionsExtracted",
-          fromDate: fromDate,
-          toDate: toDate,
-          accountNumber: state.accountNumber,
-          transactions: transactions,
-          success: true,
-        });
+        // Gửi message về background
+        chrome.runtime.sendMessage(
+          {
+            action: "acbTransactionsExtracted",
+            fromDate: fromDate,
+            toDate: toDate,
+            accountNumber: state.accountNumber,
+            transactions: transactions,
+            success: true,
+          },
+          (response) => {
+            console.log("Response from background:", response);
+            
+            // Đóng tab sau khi nhận response từ background
+            if (response && response.success) {
+              console.log("Closing current tab...");
+              chrome.runtime.sendMessage({ action: "closeCurrentTab" });
+            }
+          }
+        );
 
         ACBFlowState.clear();
         return;
@@ -590,9 +676,9 @@ window.addEventListener("load", () => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "loginAndClickAccountACB") {
-    const { username, password, accountNumber } = request;
+    const { username, password, accountNumber, date } = request;
 
-    handleLoginAndGetTransactions(username, password, accountNumber)
+    handleLoginAndGetTransactions(username, password, accountNumber, date)
       .then((result) => sendResponse(result))
       .catch((error) =>
         sendResponse({

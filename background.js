@@ -29,7 +29,7 @@ const BANKS = [
 // Webhook URL n8n để gửi dữ liệu giao dịch ACB
 async function postToN8N(
   payload,
-  url = "https://n8n.hocduthu.com/webhook-test/acb"
+  url = "https://n8n.hocduthu.com/webhook/acb"
 ) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 30000); // timeout 30s
@@ -686,9 +686,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // 6. Xử lý login và tự động click account ACB (luồng hoàn chỉnh)
   if (request.action === "loginAndClickACB") {
-    const { accountNumber } = request;
+    const { accountNumber, date } = request;
 
-    console.log(`Starting ACB full flow for account: ${accountNumber}`);
+    console.log(`Starting ACB full flow for account: ${accountNumber}, date: ${date}`);
 
     // Lấy thông tin tài khoản từ localStorage trước
     chrome.storage.local.get(["banks"], (result) => {
@@ -724,8 +724,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         let acbTab = tabs[0];
 
         if (acbTab) {
-          // Focus tab existing
-          chrome.tabs.update(acbTab.id, { active: true }, () => {
             // Clear ACBFlowState trước khi bắt đầu flow mới
             chrome.tabs.sendMessage(
               acbTab.id,
@@ -744,6 +742,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     username: username,
                     password: password,
                     accountNumber: accountNumber,
+                    date: date
                   },
                   (response) => {
                     console.log("ACB flow initiated:", response);
@@ -752,13 +751,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 );
               }
             );
-          });
         } else {
           // Tạo tab mới
           chrome.tabs.create(
             {
               url: "https://online.acb.com.vn/",
-              active: true,
+              active: false,
             },
             (newTab) => {
               // Đợi tab load xong
@@ -786,6 +784,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             username: username,
                             password: password,
                             accountNumber: accountNumber,
+                            date: date
                           },
                           (response) => {
                             console.log(
@@ -810,32 +809,63 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   // 7. Handler nhận kết quả transactions từ content script (mảng các giao dịch)
-  if (request.action === "acbTransactionsExtracted") {
-    const { accountNumber, transactions, fromDate, toDate, success, message } =
-      request;
+if (request.action === "acbTransactionsExtracted") {
+  const { accountNumber, transactions, fromDate, toDate, success, message } =
+    request;
 
-    console.log(`ACB transactions extracted for account ${accountNumber}:`, {
+  console.log(`ACB transactions extracted for account ${accountNumber}:`, {
+    success,
+    count: transactions?.length || 0,
+  });
+
+  // Lưu transactions vào storage hoặc xử lý tiếp
+  if (success && Array.isArray(transactions)) {
+    const payload = {
+      accountNumber,
+      fromDate,
+      toDate,
+      transactions,
       success,
-      count: transactions?.length || 0,
+      message: message || null,
+    };
+
+    // Gửi webhook
+    postToN8N(payload).then((r) => {
+      console.log("Webhook POST -> n8n:", r);
+      
+      // Trả response về content script
+      if (r.ok) {
+        sendResponse({ 
+          success: true, 
+          message: "Data sent successfully to n8n" 
+        });
+      } else {
+        sendResponse({ 
+          success: false, 
+          message: "Webhook failed: " + r.error 
+        });
+      }
     });
-
-    // Lưu transactions vào storage hoặc xử lý tiếp
-    if (success && Array.isArray(transactions)) {
-      const payload = {
-        accountNumber,
-        fromDate,
-        toDate,
-        transactions,
-        success,
-        message: message || null,
-      };
-
-      // fire-and-forget; nếu muốn phản hồi lại content script, dùng sendResponse và return true
-      postToN8N(payload).then((r) => {
-        console.log("Webhook POST -> n8n:", r);
-      });
-    }
-
-    return false;
+    
+    return true; // QUAN TRỌNG: Giữ message channel mở cho async response
+  } else {
+    sendResponse({ 
+      success: false, 
+      message: message || "Invalid transactions data" 
+    });
   }
+
+  return false;
+}
+
+// 8. Handler đóng tab acb hiện tại
+if (request.action === "closeCurrentTab") {
+  if (sender.tab && sender.tab.id) {
+    chrome.tabs.remove(sender.tab.id, () => {
+      console.log(`Closed tab ${sender.tab.id}`);
+    });
+  }
+  return false;
+}
+
 });
