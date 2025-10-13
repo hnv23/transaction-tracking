@@ -362,6 +362,82 @@ async function filterAndSubmitByDate(date) {
 }
 
 // ========== TRANSACTION EXTRACTION ==========
+// async function extractTransactions() {
+//   console.log("Extracting transactions from detail page...");
+
+//   // Đợi bảng giao dịch xuất hiện
+//   await waitForElement("#table1", 10000);
+
+//   const transactions = [];
+//   const table = document.getElementById("table1");
+
+//   if (!table) {
+//     console.error("Table with id 'table1' not found");
+//     return transactions;
+//   }
+
+//   const rows = table.querySelectorAll("tr");
+//   console.log(`Found ${rows.length} rows in transaction table`);
+
+//   // Bỏ qua header row (index 0)
+//   for (let i = 1; i < rows.length; i++) {
+//     const row = rows[i];
+//     const cells = row.querySelectorAll("td");
+
+//     // Kiểm tra xem đây có phải hàng dữ liệu chính (có 6 cột)
+//     if (cells.length === 6) {
+//       // Lấy ngày hiệu lực, ngày giao dịch, số GD
+//       const effectiveDate = cells[0]?.textContent?.trim() || "";
+//       const transactionDate = cells[1]?.textContent?.trim() || "";
+//       const transactionNumber = cells[2]?.textContent?.trim() || "";
+
+//       // Lấy số tiền (loại bỏ ký tự &nbsp; và khoảng trắng)
+//       const debitText = cells[3]?.textContent?.trim().replace(/\s+/g, "") || "";
+//       const creditText =
+//         cells[4]?.textContent?.trim().replace(/\s+/g, "") || "";
+//       const balanceText =
+//         cells[5]?.textContent?.trim().replace(/\s+/g, "") || "";
+
+//       // Lấy mô tả từ hàng tiếp theo (nếu có)
+//       let description = "";
+//       if (i + 1 < rows.length) {
+//         const nextRow = rows[i + 1];
+//         const nextCells = nextRow.querySelectorAll("td");
+
+//         // Hàng mô tả thường có class "acctSum" hoặc colspan
+//         if (nextCells.length > 0) {
+//           const descCell = nextRow.querySelector("td.acctSum");
+//           if (descCell) {
+//             description = descCell.textContent?.trim() || "";
+//             i++; // Skip hàng mô tả ở lần lặp tiếp theo
+//           }
+//         }
+//       }
+
+//       // Chỉ thêm giao dịch nếu có ngày hiệu lực và có tiền
+//       if (effectiveDate && (debitText || creditText)) {
+//         const transaction = {
+//           effectiveDate: effectiveDate,
+//           transactionDate: transactionDate,
+//           transactionNumber: transactionNumber,
+//           debit: debitText === "&nbsp;" || debitText === "" ? "" : debitText,
+//           credit:
+//             creditText === "&nbsp;" || creditText === "" ? "" : creditText,
+//           balance:
+//             balanceText === "&nbsp;" || balanceText === "" ? "" : balanceText,
+//           description: description,
+//         };
+
+//         transactions.push(transaction);
+//         // console.log(`Transaction ${transactions.length}:`, transaction);
+//       }
+//     }
+//   }
+
+//   console.log(`Successfully extracted ${transactions.length} transactions`);
+//   // console.table(transactions);
+//   return transactions;
+// }
 async function extractTransactions() {
   console.log("Extracting transactions from detail page...");
 
@@ -378,6 +454,46 @@ async function extractTransactions() {
 
   const rows = table.querySelectorAll("tr");
   console.log(`Found ${rows.length} rows in transaction table`);
+
+  // Hàm phân tích thông tin Facebook từ description
+  function parseFacebookPayment(description) {
+    const fbInfo = {
+      cardLastDigits: "",
+      fbTransactionCode: "",
+      fbTransactionLast3: "",
+      exactTransactionTime: ""
+    };
+
+    // Kiểm tra xem có phải giao dịch Facebook không
+    if (!description.includes("GD TAI FACEBK *")) {
+      return fbInfo;
+    }
+
+    // Trích xuất số đuôi thẻ (4 số cuối của dãy bắt đầu bằng số và có XX)
+    const cardMatch = description.match(/\d{4}XX(\d{4})/);
+    if (cardMatch) {
+      fbInfo.cardLastDigits = cardMatch[1]; // Lấy 4 số cuối từ capturing group: 6176 hoặc 0123
+    }
+
+    // Trích xuất mã giao dịch Facebook (sau "FACEBK *" và trước khoảng trắng/TRACE)
+    const fbCodeMatch = description.match(/FACEBK\s*\*\s*([A-Z0-9]+)/);
+    if (fbCodeMatch) {
+      fbInfo.fbTransactionCode = fbCodeMatch[1]; // Ví dụ: HA7J53ZYA2
+      fbInfo.fbTransactionLast3 = fbCodeMatch[1].slice(-3); // 3 ký tự cuối: YA2
+    }
+
+    // Trích xuất thời gian chính xác (định dạng DD/MM/YYYYHHMMSS -> DD/MM/YYYY HH:MM:SS)
+    const timeMatch = description.match(/(\d{2}\/\d{2}\/\d{4})(\d{2})(\d{2})(\d{2})/);
+    if (timeMatch) {
+      const date = timeMatch[1]; // 11/10/2025
+      const hours = timeMatch[2]; // 15
+      const minutes = timeMatch[3]; // 53
+      const seconds = timeMatch[4]; // 42
+      fbInfo.exactTransactionTime = `${date} ${hours}:${minutes}:${seconds}`; // 11/10/2025 15:53:42
+    }
+
+    return fbInfo;
+  }
 
   // Bỏ qua header row (index 0)
   for (let i = 1; i < rows.length; i++) {
@@ -416,6 +532,9 @@ async function extractTransactions() {
 
       // Chỉ thêm giao dịch nếu có ngày hiệu lực và có tiền
       if (effectiveDate && (debitText || creditText)) {
+        // Phân tích thông tin Facebook payment
+        const fbInfo = parseFacebookPayment(description);
+
         const transaction = {
           effectiveDate: effectiveDate,
           transactionDate: transactionDate,
@@ -426,6 +545,10 @@ async function extractTransactions() {
           balance:
             balanceText === "&nbsp;" || balanceText === "" ? "" : balanceText,
           description: description,
+          cardLastDigits: fbInfo.cardLastDigits,
+          fbTransactionCode: fbInfo.fbTransactionCode,
+          fbTransactionLast3: fbInfo.fbTransactionLast3,
+          exactTransactionTime: fbInfo.exactTransactionTime
         };
 
         transactions.push(transaction);
