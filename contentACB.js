@@ -175,8 +175,9 @@ async function performLogin(username, password) {
   try {
     console.log("Performing login...");
 
-    const captchaBlob = await getCaptchaBlob();
-    const captchaText = await solveCaptcha(captchaBlob);
+    // const captchaBlob = await getCaptchaBlob();
+    const captchaBase64 = await getCaptchaBase64();
+    const captchaText = await solveCaptcha(captchaBase64);
 
     document.querySelector('input[name="UserName"]').value = username;
     document.querySelector('input[name="PassWord"]').value = password;
@@ -379,6 +380,46 @@ async function filterAndSubmitByDate(date) {
 //   const rows = table.querySelectorAll("tr");
 //   console.log(`Found ${rows.length} rows in transaction table`);
 
+//   // Hàm phân tích thông tin Facebook từ description
+//   function parseFacebookPayment(description) {
+//     const fbInfo = {
+//       cardLastDigits: "",
+//       fbTransactionCode: "",
+//       fbTransactionLast3: "",
+//       exactTransactionTime: ""
+//     };
+
+//     // Kiểm tra xem có phải giao dịch Facebook không
+//     if (!description.includes("GD TAI FACEBK *")) {
+//       return fbInfo;
+//     }
+
+//     // Trích xuất số đuôi thẻ (4 số cuối của dãy bắt đầu bằng số và có XX)
+//     const cardMatch = description.match(/\d{4}XX(\d{4})/);
+//     if (cardMatch) {
+//       fbInfo.cardLastDigits = cardMatch[1]; // Lấy 4 số cuối từ capturing group: 6176 hoặc 0123
+//     }
+
+//     // Trích xuất mã giao dịch Facebook (sau "FACEBK *" và trước khoảng trắng/TRACE)
+//     const fbCodeMatch = description.match(/FACEBK\s*\*\s*([A-Z0-9]+)/);
+//     if (fbCodeMatch) {
+//       fbInfo.fbTransactionCode = fbCodeMatch[1]; // Ví dụ: HA7J53ZYA2
+//       fbInfo.fbTransactionLast3 = fbCodeMatch[1].slice(-3); // 3 ký tự cuối: YA2
+//     }
+
+//     // Trích xuất thời gian chính xác (định dạng DD/MM/YYYYHHMMSS -> DD/MM/YYYY HH:MM:SS)
+//     const timeMatch = description.match(/(\d{2}\/\d{2}\/\d{4})(\d{2})(\d{2})(\d{2})/);
+//     if (timeMatch) {
+//       const date = timeMatch[1]; // 11/10/2025
+//       const hours = timeMatch[2]; // 15
+//       const minutes = timeMatch[3]; // 53
+//       const seconds = timeMatch[4]; // 42
+//       fbInfo.exactTransactionTime = `${date} ${hours}:${minutes}:${seconds}`; // 11/10/2025 15:53:42
+//     }
+
+//     return fbInfo;
+//   }
+
 //   // Bỏ qua header row (index 0)
 //   for (let i = 1; i < rows.length; i++) {
 //     const row = rows[i];
@@ -416,6 +457,9 @@ async function filterAndSubmitByDate(date) {
 
 //       // Chỉ thêm giao dịch nếu có ngày hiệu lực và có tiền
 //       if (effectiveDate && (debitText || creditText)) {
+//         // Phân tích thông tin Facebook payment
+//         const fbInfo = parseFacebookPayment(description);
+
 //         const transaction = {
 //           effectiveDate: effectiveDate,
 //           transactionDate: transactionDate,
@@ -426,6 +470,10 @@ async function filterAndSubmitByDate(date) {
 //           balance:
 //             balanceText === "&nbsp;" || balanceText === "" ? "" : balanceText,
 //           description: description,
+//           cardLastDigits: fbInfo.cardLastDigits,
+//           fbTransactionCode: fbInfo.fbTransactionCode,
+//           fbTransactionLast3: fbInfo.fbTransactionLast3,
+//           exactTransactionTime: fbInfo.exactTransactionTime
 //         };
 
 //         transactions.push(transaction);
@@ -438,6 +486,7 @@ async function filterAndSubmitByDate(date) {
 //   // console.table(transactions);
 //   return transactions;
 // }
+
 async function extractTransactions() {
   console.log("Extracting transactions from detail page...");
 
@@ -454,6 +503,45 @@ async function extractTransactions() {
 
   const rows = table.querySelectorAll("tr");
   console.log(`Found ${rows.length} rows in transaction table`);
+
+  // Hàm chuyển đổi string số tiền sang number
+  function parseAmount(amountStr) {
+    if (!amountStr || amountStr === "&nbsp;" || amountStr === "") {
+      return 0;
+    }
+    // Loại bỏ tất cả ký tự không phải số, dấu chấm và dấu phấy
+    // VD: "1.234.567,89" -> "1234567.89"
+    const cleaned = amountStr
+      .replace(/\s+/g, "") // Loại bỏ khoảng trắng
+      .replace(/\./g, "") // Loại bỏ dấu chấm phân cách hàng nghìn
+      .replace(/,/g, "."); // Chuyển dấu phấy thập phân thành dấu chấm
+    
+    const number = parseFloat(cleaned);
+    return isNaN(number) ? 0 : number;
+  }
+
+  // Hàm chuyển đổi ngày giờ sang ISO-8601 với offset +07:00
+  function toISOWithVNOffset(dateStr, timeStr = "00:00:00") {
+    if (!dateStr) return "";
+    
+    // dateStr có thể là "DD/MM/YYYY" hoặc "DD/MM/YYYY HH:MM:SS"
+    let date, time;
+    
+    if (dateStr.includes(" ")) {
+      // Trường hợp "DD/MM/YYYY HH:MM:SS"
+      [date, time] = dateStr.split(" ");
+    } else {
+      // Trường hợp chỉ có "DD/MM/YYYY"
+      date = dateStr;
+      time = timeStr;
+    }
+    
+    const [day, month, year] = date.split("/");
+    const [hours, minutes, seconds] = time.split(":");
+    
+    // Tạo ISO string: YYYY-MM-DDTHH:MM:SS+07:00
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}:${seconds.padStart(2, '0')}+07:00`;
+  }
 
   // Hàm phân tích thông tin Facebook từ description
   function parseFacebookPayment(description) {
@@ -507,12 +595,10 @@ async function extractTransactions() {
       const transactionDate = cells[1]?.textContent?.trim() || "";
       const transactionNumber = cells[2]?.textContent?.trim() || "";
 
-      // Lấy số tiền (loại bỏ ký tự &nbsp; và khoảng trắng)
-      const debitText = cells[3]?.textContent?.trim().replace(/\s+/g, "") || "";
-      const creditText =
-        cells[4]?.textContent?.trim().replace(/\s+/g, "") || "";
-      const balanceText =
-        cells[5]?.textContent?.trim().replace(/\s+/g, "") || "";
+      // Lấy số tiền (text gốc)
+      const debitText = cells[3]?.textContent?.trim() || "";
+      const creditText = cells[4]?.textContent?.trim() || "";
+      const balanceText = cells[5]?.textContent?.trim() || "";
 
       // Lấy mô tả từ hàng tiếp theo (nếu có)
       let description = "";
@@ -536,19 +622,17 @@ async function extractTransactions() {
         const fbInfo = parseFacebookPayment(description);
 
         const transaction = {
-          effectiveDate: effectiveDate,
-          transactionDate: transactionDate,
+          effectiveDate: toISOWithVNOffset(effectiveDate),
+          transactionDate: toISOWithVNOffset(transactionDate),
           transactionNumber: transactionNumber,
-          debit: debitText === "&nbsp;" || debitText === "" ? "" : debitText,
-          credit:
-            creditText === "&nbsp;" || creditText === "" ? "" : creditText,
-          balance:
-            balanceText === "&nbsp;" || balanceText === "" ? "" : balanceText,
+          debit: parseAmount(debitText),
+          credit: parseAmount(creditText),
+          balance: parseAmount(balanceText),
           description: description,
           cardLastDigits: fbInfo.cardLastDigits,
           fbTransactionCode: fbInfo.fbTransactionCode,
           fbTransactionLast3: fbInfo.fbTransactionLast3,
-          exactTransactionTime: fbInfo.exactTransactionTime
+          exactTransactionTime: fbInfo.exactTransactionTime ? toISOWithVNOffset(fbInfo.exactTransactionTime) : null
         };
 
         transactions.push(transaction);
@@ -563,7 +647,20 @@ async function extractTransactions() {
 }
 
 // ========== HELPER FUNCTIONS ==========
-async function getCaptchaBlob() {
+// async function getCaptchaBlob() {
+//   const captchaImg = document.querySelector('img[src*="Captcha.jpg"]');
+//   if (!captchaImg) throw new Error("Không tìm thấy ảnh captcha");
+
+//   const response = await fetch(captchaImg.src, {
+//     credentials: "include",
+//     cache: "no-cache",
+//   });
+
+//   return response.blob();
+// }
+
+
+async function getCaptchaBase64() {
   const captchaImg = document.querySelector('img[src*="Captcha.jpg"]');
   if (!captchaImg) throw new Error("Không tìm thấy ảnh captcha");
 
@@ -572,17 +669,46 @@ async function getCaptchaBlob() {
     cache: "no-cache",
   });
 
-  return response.blob();
+  const blob = await response.blob();
+  
+  // Chuyển blob thành base64
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      // reader.result chứa data URL dạng: "data:image/jpeg;base64,/9j/4AAQ..."
+      // Tách phần base64 ra (bỏ phần "data:image/jpeg;base64,")
+      const base64String = reader.result.split(',')[1];
+      resolve({
+        base64: base64String,
+        mimeType: blob.type
+      });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
-async function solveCaptcha(blob) {
-  const arrayBuffer = await blob.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
+// async function solveCaptcha(blob) {
+//   const arrayBuffer = await blob.arrayBuffer();
+//   const uint8Array = new Uint8Array(arrayBuffer);
 
+//   const response = await chrome.runtime.sendMessage({
+//     action: "solveCaptchaACB",
+//     imageData: Array.from(uint8Array),
+//     mimeType: blob.type,
+//   });
+
+//   if (response?.success) {
+//     return response.text;
+//   }
+//   throw new Error(response?.message || "Không thể giải captcha");
+// }
+
+async function solveCaptcha(captchaData) {
   const response = await chrome.runtime.sendMessage({
     action: "solveCaptchaACB",
-    imageData: Array.from(uint8Array),
-    mimeType: blob.type,
+    imageBase64: captchaData.base64,
+    mimeType: captchaData.mimeType,
   });
 
   if (response?.success) {

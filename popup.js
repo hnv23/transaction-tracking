@@ -617,11 +617,12 @@ async function exportToGoogleSheetsTpBank(data, fromDate, toDate) {
 
       return {
         stt: index + 1,
-        reference: transaction.reference,
-        performDate: transaction.performDate,
-        description: transaction.description,
-        transactionType: transactionType,
-        amount: transaction.amount,
+        reference: transaction.reference,     // mã giao dịch
+        performDate: transaction.performDate, // thời gian thực hiện giao dịch
+        description: transaction.description, // nội dung giao dịch
+        transactionType: transactionType,     // loại giao dịch OUT: chuyển tiển đi, IN: nhận tiền vào, UNKNOWN: có thể là thanh toán hóa đơn gì đó
+        amount: transaction.amount,           // số tiền
+        balance: transaction.runningBalance   // số dư sau giao dịch
       };
     });
 
@@ -663,6 +664,7 @@ async function exportToGoogleSheetsTpBank(data, fromDate, toDate) {
           "Nội Dung",
           "Loại GD",
           "Số Tiền",
+          "Số dư sau GD"
         ],
         isFirstBatch: i === 0, // Đánh dấu batch đầu tiên để tạo sheet và thêm header
         append: i > 0, // Các batch tiếp theo sẽ append dữ liệu
@@ -747,6 +749,7 @@ async function exportToGoogleSheetsVpBank(data, fromDate, toDate) {
         description: transaction.Description, // Nội dung
         transactionType: transactionType, // Loại GD
         amount: transaction.Amount, // Số tiền
+        balance: transaction.Balance // số dư sau GD
       };
     });
 

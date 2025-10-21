@@ -627,25 +627,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // 5. Xử lý giải captcha ACB (gửi binary file)
   if (request.action === "solveCaptchaACB") {
-    const { imageData, mimeType } = request;
+    // const { imageData, mimeType } = request;
 
-    console.log("Solving ACB captcha, image size:", imageData.length, "bytes");
+    const { imageBase64, mimeType } = request;
+
+    console.log("Solving ACB captcha, base64 length:", imageBase64.length);
     console.log("MIME type:", mimeType);
 
-    // Convert array back to Uint8Array, then to Blob
-    const uint8Array = new Uint8Array(imageData);
-    const blob = new Blob([uint8Array], { type: mimeType || "image/jpeg" });
-
-    console.log("Blob created, size:", blob.size);
-
-    // Tạo FormData để gửi file
-    const formData = new FormData();
-    formData.append("image", blob, "captcha.jpg");
-
-    // Gọi API giải captcha với multipart/form-data
-    fetch("https://n8n.hocduthu.com/webhook/captcha-acb", {
+    // Gửi API giải captcha với JSON body chứa base64
+    fetch("https://anticaptcha.top/api/captcha", {
       method: "POST",
-      body: formData, // Không set Content-Type, browser tự động set cho FormData
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        apikey: "7df01113faa17644540cfc559bef5319",
+        img: imageBase64,
+        type: 59 // id loại captcha muốn giải theo anticaptcha.top
+      }),
     })
       .then((response) => {
         console.log("Captcha API response status:", response.status);
@@ -658,9 +657,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then((data) => {
         console.log("Captcha API response:", data);
 
-        // Xử lý các format response khác nhau
+        // Kiểm tra success flag trước
+        if (!data.success) {
+          throw new Error(data.message || "Captcha solving failed");
+        }
+
+        // Ưu tiên lấy từ trường 'captcha', sau đó các trường khác
         const captchaText =
-          data.text || data.result || data.captcha || data.code || data[0].text;
+          data.captcha || 
+          data.text || 
+          data.result || 
+          data.code || 
+          data[0]?.text;
 
         if (!captchaText) {
           throw new Error("Không tìm thấy captcha text trong response");
