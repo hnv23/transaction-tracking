@@ -33,11 +33,11 @@
     (async () => {
       try {
         // await closeAnyOpenPopup();
-        await wait(1000);
+        await wait(2000);
 
         // === STEP 1: Mở popup "Số tham chiếu" ===
         const openReferencePopup = async () => {
-          for (let i = 0; i < 20; i++) {
+          for (let i = 0; i < 10; i++) {
             const btn = [...document.querySelectorAll('div[role="button"] span')]
               .find(el => el.textContent.includes("Số tham chiếu") && !el.textContent.includes("Kết quả"));
             if (btn && btn.offsetParent) {
@@ -45,7 +45,7 @@
               console.log("✅ Đã click 'Số tham chiếu'");
               return true;
             }
-            await wait(500);
+            await wait(1000);
           }
           throw new Error("Không tìm thấy nút 'Số tham chiếu'");
         };
@@ -55,10 +55,10 @@
 
         // === STEP 2: Đợi input field ===
         const inputField = await (async () => {
-          for (let i = 0; i < 15; i++) {
+          for (let i = 0; i < 5; i++) {
             const el = document.querySelector('input[placeholder="Nhập số tham chiếu…"]');
             if (el && el.offsetParent) return el;
-            await wait(500);
+            await wait(1000);
           }
           throw new Error("Không tìm thấy input field");
         })();
@@ -67,12 +67,12 @@
         inputField.focus();
         inputField.value = '';
         inputField.select(); // Select all để đảm bảo xóa
-        await wait(100);
+        await wait(1000);
 
         for (const char of ma_gd_fb) {
           inputField.value += char;
           inputField.dispatchEvent(new Event('input', { bubbles: true }));
-          await wait(60);
+          await wait(70);
         }
         inputField.dispatchEvent(new Event('change', { bubbles: true }));
         console.log(`✅ Đã nhập: ${inputField.value}`);
@@ -118,7 +118,7 @@
 
         // === STEP 5: Đợi kết quả ===
         const result = await (async () => {
-        for (let i = 0; i < 25; i++) {
+        for (let i = 0; i < 15; i++) {
             // 1. Kiểm tra "Không tìm thấy"
             // const noResult = [...document.querySelectorAll('span')]
             // .some(s => s.textContent.includes("Không tìm thấy giao dịch nào"));
@@ -138,7 +138,7 @@
                 return { found: true, container };
             }
             }
-            await wait(400); // Giảm từ 600 → 400ms
+            await wait(1000); // 1s mỗi lần 
         }
         throw new Error("Timeout chờ kết quả");
         })();
@@ -159,11 +159,13 @@
           console.log("✅ Dữ liệu:", extracted);
         }
 
+        await wait(1200);
+
         // === STEP 6: Nhấn "Quay lại" hoặc "Đóng" để tiếp tục ===
         console.log("\nStep 6: Tìm dialog 'Số tham chiếu' và nút 'Quay lại'...");
 
         const backBtn = await (async () => {
-        for (let i = 0; i < 30; i++) {
+        for (let i = 0; i < 10; i++) {
             // TÌM TẤT CẢ dialog
             const allDialogs = document.querySelectorAll('div[role="dialog"]');
             console.log(`Tìm thấy ${allDialogs.length} dialog`);
@@ -182,7 +184,7 @@
 
             if (!targetDialog) {
             console.log("Chưa thấy dialog 'Số tham chiếu'");
-            await wait(400);
+            await wait(1000);
             continue;
             }
 
@@ -205,7 +207,7 @@
         if (backBtn) {
         backBtn.click();
         console.log("ĐÃ CLICK 'QUAY LẠI'");
-        await wait(100);
+        await wait(800);
         } else {
         console.warn("Không tìm thấy → dùng ESC");
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

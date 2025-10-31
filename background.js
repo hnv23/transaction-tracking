@@ -59,7 +59,7 @@ async function postToN8N(
 
 async function postToN8NCheckBillFacebook(
   payload,
-  url = "https://n8n.hocduthu.com/webhook/transactionhe"
+  url = "https://n8n.hocduthu.com/webhook/update-transaction"
 ) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 30000); // timeout 30s
@@ -85,6 +85,57 @@ async function postToN8NCheckBillFacebook(
   } finally {
     clearTimeout(t);
   }
+}
+
+function toIsoDate(input) {
+  if (typeof input !== 'string') return null;
+
+  const s = input.trim();
+  const m = /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/.exec(s);
+  if (!m) return null;
+
+  let [_, ddStr, mmStr, yyyyStr] = m;
+  const dd = Number(ddStr);
+  const mm = Number(mmStr);
+  const yyyy = Number(yyyyStr);
+
+  // Kiểm tra tháng
+  if (mm < 1 || mm > 12) return null;
+
+  // Số ngày tối đa theo tháng (có tính năm nhuận)
+  const daysInMonth = (y, mth) => {
+    if (mth === 2) {
+      const leap = (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+      return leap ? 29 : 28;
+    }
+    return [4, 6, 9, 11].includes(mth) ? 30 : 31;
+  };
+
+  if (dd < 1 || dd > daysInMonth(yyyy, mm)) return null;
+
+  const pad2 = n => String(n).padStart(2, '0');
+  return `${yyyy}-${pad2(mm)}-${pad2(dd)}`;
+}
+
+function vndToInt(str) {
+  if (typeof str !== "string") return null;
+
+  // Chuẩn hóa & bỏ ký hiệu tiền tệ
+  let s = str.replace(/\u00A0/g, " ") // bỏ NBSP
+             .replace(/[₫đ]/gi, "")  // bỏ ký hiệu VND
+             .trim();
+
+  // Cắt bỏ phần thập phân nếu có dùng dấu phẩy
+  // Ví dụ "1.234.232,50" -> lấy "1.234.232"
+  s = s.split(",")[0];
+
+  // Giữ lại chữ số và dấu '-' (nếu có)
+  const digits = s.replace(/[^\d-]/g, "");
+
+  if (!digits || /^-?$/.test(digits)) return null; // không có số hợp lệ
+
+  // Chuyển sang Number (lưu ý: rất số lớn có thể vượt quá Number.MAX_SAFE_INTEGER)
+  return digits;
 }
 
 // Lớp xử lý đăng nhập tự động VPBank
@@ -911,6 +962,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   console.log(`Starting CheckBillFb for account: ${accountNumber}, date: ${date}`);
 
+  // parse date form dd/mm/yyyy to yyyy-mm-dd
+  const dateParsed = toIsoDate(date);
+
   // Wrap trong async function để xử lý tốt hơn
   (async () => {
     try {
@@ -921,7 +975,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         },
         body: JSON.stringify({
           accountNumber: accountNumber,
-          date: date
+          date: dateParsed
         }),
       });
 
@@ -1069,11 +1123,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                   ma_gd_fb: messageResponse.results.ma_gd_fb,
                   status: messageResponse.results.status,
                   date: messageResponse.results.date,
-                  amount: messageResponse.results.amount,
+                  amount: vndToInt(messageResponse.results.amount),
                   reference: messageResponse.results.reference,
                   message: messageResponse.results.message || null,
                   // Thêm thông tin từ record gốc
-                  expected_amount: record.so_tien,
+                  expected_amount: String(record.so_tien).trim().replace(/[.,].*$/, ""),
                   expected_date: record.ngay_hieu_luc
                 };
 
@@ -1081,8 +1135,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 console.log(`Webhook POST for ma_gd_fb ${ma_gd_fb}:`, webhookResult);
               }
 
-              // Đợi 1 giây trước khi xử lý transaction tiếp theo trong cùng account
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              // Đợi 2 giây trước khi xử lý transaction tiếp theo trong cùng account
+              await new Promise(resolve => setTimeout(resolve, 2000));
 
             } catch (error) {
               console.error(`Error processing transaction ${ma_gd_fb}:`, error);
@@ -1101,7 +1155,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               await postToN8NCheckBillFacebook(errorPayload);
 
               // Đợi trước khi retry hoặc tiếp tục
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              await new Promise(resolve => setTimeout(resolve, 2000));
 
               // Tiếp tục với transaction tiếp theo
               continue;
@@ -1110,8 +1164,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
           console.log(`Completed processing account ${account_fb_id}`);
           
-          // Đợi 1 giây trước khi chuyển sang account tiếp theo
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Đợi 2 giây trước khi chuyển sang account tiếp theo
+          await new Promise(resolve => setTimeout(resolve, 2000));
 
         } catch (error) {
           console.error(`Error processing account ${account_fb_id}:`, error);
