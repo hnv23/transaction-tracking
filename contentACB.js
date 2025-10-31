@@ -546,10 +546,11 @@ async function extractTransactions() {
   // Hàm phân tích thông tin Facebook từ description
   function parseFacebookPayment(description) {
     const fbInfo = {
-      cardLastDigits: "",
-      fbTransactionCode: "",
-      fbTransactionLast3: "",
-      exactTransactionTime: ""
+      cardLastDigits: null,
+      fbTransactionCode: null,
+      fbTransactionLast3: null,
+      exactTransactionTime: null,
+      isFbTransaction: '0'      // mặc định là không phải giao dịch fb
     };
 
     // Kiểm tra xem có phải giao dịch Facebook không
@@ -568,6 +569,7 @@ async function extractTransactions() {
     if (fbCodeMatch) {
       fbInfo.fbTransactionCode = fbCodeMatch[1]; // Ví dụ: HA7J53ZYA2
       fbInfo.fbTransactionLast3 = fbCodeMatch[1].slice(-3); // 3 ký tự cuối: YA2
+      fbInfo.isFbTransaction = '1';     // đúng là giao dịch trừ tiền của fb 
     }
 
     // Trích xuất thời gian chính xác (định dạng DD/MM/YYYYHHMMSS -> DD/MM/YYYY HH:MM:SS)
@@ -632,6 +634,7 @@ async function extractTransactions() {
           cardLastDigits: fbInfo.cardLastDigits,
           fbTransactionCode: fbInfo.fbTransactionCode,
           fbTransactionLast3: fbInfo.fbTransactionLast3,
+          isFbTransaction: fbInfo.isFbTransaction,
           exactTransactionTime: fbInfo.exactTransactionTime ? toISOWithVNOffset(fbInfo.exactTransactionTime) : null
         };
 

@@ -57,6 +57,36 @@ async function postToN8N(
   }
 }
 
+async function postToN8NCheckBillFacebook(
+  payload,
+  url = "https://n8n.hocduthu.com/webhook/transactionhe"
+) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 30000); // timeout 30s
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await res.text();
+    if (!res.ok)
+      throw new Error(`HTTP ${res.status} ${res.statusText}: ${text}`);
+
+    try {
+      return { ok: true, data: JSON.parse(text) };
+    } catch {
+      return { ok: true, data: text };
+    }
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // Lớp xử lý đăng nhập tự động VPBank
 class VPBankAuto {
   constructor() {
@@ -627,8 +657,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // 5. Xử lý giải captcha ACB (gửi binary file)
   if (request.action === "solveCaptchaACB") {
-    // const { imageData, mimeType } = request;
-
     const { imageBase64, mimeType } = request;
 
     console.log("Solving ACB captcha, base64 length:", imageBase64.length);
@@ -817,63 +845,294 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   // 7. Handler nhận kết quả transactions từ content script (mảng các giao dịch)
-if (request.action === "acbTransactionsExtracted") {
-  const { accountNumber, transactions, fromDate, toDate, success, message } =
-    request;
+  if (request.action === "acbTransactionsExtracted") {
+    const { accountNumber, transactions, fromDate, toDate, success, message } =
+      request;
 
-  console.log(`ACB transactions extracted for account ${accountNumber}:`, {
-    success,
-    count: transactions?.length || 0,
-  });
-
-  // Lưu transactions vào storage hoặc xử lý tiếp
-  if (success && Array.isArray(transactions)) {
-    const payload = {
-      accountNumber,
-      fromDate,
-      toDate,
-      transactions,
+    console.log(`ACB transactions extracted for account ${accountNumber}:`, {
       success,
-      message: message || null,
-    };
+      count: transactions?.length || 0,
+    });
 
-    // Gửi webhook
-    postToN8N(payload).then((r) => {
-      console.log("Webhook POST -> n8n:", r);
+    // Lưu transactions vào storage hoặc xử lý tiếp
+    if (success && Array.isArray(transactions)) {
+      const payload = {
+        accountNumber,
+        fromDate,
+        toDate,
+        transactions,
+        success,
+        message: message || null,
+      };
+
+      // Gửi webhook
+      postToN8N(payload).then((r) => {
+        console.log("Webhook POST -> n8n:", r);
+        
+        // Trả response về content script
+        if (r.ok) {
+          sendResponse({ 
+            success: true, 
+            message: "Data sent successfully to n8n" 
+          });
+        } else {
+          sendResponse({ 
+            success: false, 
+            message: "Webhook failed: " + r.error 
+          });
+        }
+      });
       
-      // Trả response về content script
-      if (r.ok) {
-        sendResponse({ 
-          success: true, 
-          message: "Data sent successfully to n8n" 
-        });
-      } else {
-        sendResponse({ 
-          success: false, 
-          message: "Webhook failed: " + r.error 
-        });
+      return true; // QUAN TRỌNG: Giữ message channel mở cho async response
+    } else {
+      sendResponse({ 
+        success: false, 
+        message: message || "Invalid transactions data" 
+      });
+    }
+
+    return false;
+  }
+
+  // 8. Handler đóng tab acb hiện tại
+  if (request.action === "closeCurrentTab") {
+    if (sender.tab && sender.tab.id) {
+      chrome.tabs.remove(sender.tab.id, () => {
+        console.log(`Closed tab ${sender.tab.id}`);
+      });
+    }
+    return false;
+  }
+
+
+  // 9. Xử lý mở FB Hoạt động thanh toán để check Bill
+  if (request.action === "CheckBillFb") {
+  const { accountNumber, date } = request;
+
+  console.log(`Starting CheckBillFb for account: ${accountNumber}, date: ${date}`);
+
+  // Wrap trong async function để xử lý tốt hơn
+  (async () => {
+    try {
+      const response = await fetch("https://n8n.hocduthu.com/webhook/transaction", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          accountNumber: accountNumber,
+          date: date
+        }),
+      });
+
+      console.log("CheckBillFb API response status:", response.status);
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
       }
-    });
-    
-    return true; // QUAN TRỌNG: Giữ message channel mở cho async response
-  } else {
-    sendResponse({ 
-      success: false, 
-      message: message || "Invalid transactions data" 
-    });
-  }
 
-  return false;
-}
+      const groupedTransactions = await response.json();
+      console.log("CheckBillFb API response:", groupedTransactions);
 
-// 8. Handler đóng tab acb hiện tại
-if (request.action === "closeCurrentTab") {
-  if (sender.tab && sender.tab.id) {
-    chrome.tabs.remove(sender.tab.id, () => {
-      console.log(`Closed tab ${sender.tab.id}`);
-    });
-  }
-  return false;
+      if (!Array.isArray(groupedTransactions) || groupedTransactions.length === 0) {
+        console.log("No transactions found");
+        sendResponse({ success: true, message: "No transactions to process" });
+        return;
+      }
+
+      // Find existing tab with billing hub URL
+      const queryOptions = { url: "*://business.facebook.com/billing_hub/payment_activity*" };
+      let tabs = await chrome.tabs.query(queryOptions);
+
+      let billingTab;
+      if (tabs.length > 0) {
+        billingTab = tabs[0];
+        console.log(`Found existing billing tab: ${billingTab.id}`);
+      } else {
+        // Create new tab if none exists
+        billingTab = await chrome.tabs.create({
+          url: "https://business.facebook.com/billing_hub/payment_activity",
+          active: false
+        });
+        console.log(`Created new billing tab: ${billingTab.id}`);
+
+        // Wait for the new tab to fully load
+        await new Promise((resolve) => {
+          chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+            if (tabId === billingTab.id && info.status === "complete") {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }
+          });
+        });
+
+        // Đợi thêm để đảm bảo content script đã load
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // Loop through each account group
+      for (let i = 0; i < groupedTransactions.length; i++) {
+        const group = groupedTransactions[i];
+        const account_fb_id = group.account_fb_id;
+        const records = group.records || [];
+
+        console.log(`Processing account ${i + 1}/${groupedTransactions.length}: ${account_fb_id} with ${records.length} transactions`);
+
+        if (!account_fb_id) {
+          console.warn(`Skipping group without account_fb_id:`, group);
+          continue;
+        }
+
+        if (records.length === 0) {
+          console.warn(`Skipping account ${account_fb_id} with no records`);
+          continue;
+        }
+
+        const newUrl = `https://business.facebook.com/billing_hub/payment_activity?asset_id=${account_fb_id}`;
+        console.log(`Updating tab to: ${newUrl}`);
+
+        try {
+          // Update tab URL
+          await chrome.tabs.update(billingTab.id, { url: newUrl });
+
+          // Đợi tab load xong
+          await new Promise((resolve) => {
+            const listener = (tabId, info) => {
+              if (tabId === billingTab.id && info.status === "complete") {
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve();
+              }
+            };
+            chrome.tabs.onUpdated.addListener(listener);
+
+            // Timeout safety sau 15 giây
+            setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }, 15000);
+          });
+
+          // Đợi thêm để page ổn định
+          await new Promise(resolve => setTimeout(resolve, 3000));
+
+          // Kiểm tra tab còn tồn tại không
+          const tabCheck = await chrome.tabs.get(billingTab.id).catch(() => null);
+          if (!tabCheck) {
+            throw new Error("Tab was closed");
+          }
+
+          // Xử lý tất cả transactions của account này
+          console.log(`Processing ${records.length} transactions for account ${account_fb_id}`);
+          
+          for (let j = 0; j < records.length; j++) {
+            const record = records[j];
+            const ma_gd_fb = record.ma_gd_fb;
+
+            if (!ma_gd_fb) {
+              console.warn(`Skipping record without ma_gd_fb:`, record);
+              continue;
+            }
+
+            console.log(`Processing transaction ${j + 1}/${records.length}: ${ma_gd_fb}`);
+
+            try {
+              // Send message to content script
+              const messageResponse = await new Promise((resolve, reject) => {
+                chrome.tabs.sendMessage(
+                  billingTab.id,
+                  {
+                    action: "fillAndSearchFacebook",
+                    ma_gd_fb: ma_gd_fb
+                  },
+                  (response) => {
+                    if (chrome.runtime.lastError) {
+                      console.error("Content script error:", chrome.runtime.lastError);
+                      reject(new Error(chrome.runtime.lastError.message));
+                      return;
+                    }
+                    console.log("Fill and search response:", response);
+                    resolve(response);
+                  }
+                );
+
+                // Timeout safety sau 40 giây
+                setTimeout(() => {
+                  reject(new Error("Message timeout"));
+                }, 40000);
+              });
+
+              // Gửi kết quả về n8n webhook nếu thành công
+              if (messageResponse.success && messageResponse.results) {
+                const payload = {
+                  accountNumber,
+                  account_fb_id: account_fb_id,
+                  ma_gd_fb: messageResponse.results.ma_gd_fb,
+                  status: messageResponse.results.status,
+                  date: messageResponse.results.date,
+                  amount: messageResponse.results.amount,
+                  reference: messageResponse.results.reference,
+                  message: messageResponse.results.message || null,
+                  // Thêm thông tin từ record gốc
+                  expected_amount: record.so_tien,
+                  expected_date: record.ngay_hieu_luc
+                };
+
+                const webhookResult = await postToN8NCheckBillFacebook(payload);
+                console.log(`Webhook POST for ma_gd_fb ${ma_gd_fb}:`, webhookResult);
+              }
+
+              // Đợi 1 giây trước khi xử lý transaction tiếp theo trong cùng account
+              await new Promise(resolve => setTimeout(resolve, 1000));
+
+            } catch (error) {
+              console.error(`Error processing transaction ${ma_gd_fb}:`, error);
+              
+              // Gửi thông tin lỗi về webhook
+              const errorPayload = {
+                accountNumber,
+                account_fb_id: account_fb_id,
+                ma_gd_fb: ma_gd_fb,
+                status: "error",
+                message: error.message,
+                expected_amount: record.so_tien,
+                expected_date: record.ngay_hieu_luc
+              };
+              
+              await postToN8NCheckBillFacebook(errorPayload);
+
+              // Đợi trước khi retry hoặc tiếp tục
+              await new Promise(resolve => setTimeout(resolve, 1000));
+
+              // Tiếp tục với transaction tiếp theo
+              continue;
+            }
+          }
+
+          console.log(`Completed processing account ${account_fb_id}`);
+          
+          // Đợi 1 giây trước khi chuyển sang account tiếp theo
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+        } catch (error) {
+          console.error(`Error processing account ${account_fb_id}:`, error);
+          // Tiếp tục với account tiếp theo
+          continue;
+        }
+      }
+
+      console.log("Completed processing all accounts and transactions");
+      sendResponse({ success: true, message: `Processed ${groupedTransactions.length} accounts successfully` });
+
+    } catch (error) {
+      console.error("CheckBillFb error:", error);
+      sendResponse({
+        success: false,
+        message: error.message,
+      });
+    }
+  })();
+
+  return true; // Keep the message channel open for async response
 }
 
 });

@@ -9,7 +9,8 @@
     "*://*.tpb.vn/*",
     "*://*.techcombank.com.vn/*",
     "https://acb.duckhero.store/*",
-    "https://n8n.hocduthu.com/webhook/*"
+    "https://n8n.hocduthu.com/webhook/*",
+    "*://business.facebook.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -24,6 +25,16 @@
       "matches": ["https://acb.duckhero.store/trigger*"],
       "js": ["contentTrigger.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["https://acb.duckhero.store/check-bill-fb*"],
+      "js": ["contentTriggerBillFb.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://business.facebook.com/billing_hub/payment_activity*"],
+      "js": ["contentFacebookBill.js"],
+      "run_at": "document_idle"
     },
     {
       "matches": ["https://online.acb.com.vn/*"],
