@@ -520,7 +520,7 @@ async function extractTransactions() {
     return isNaN(number) ? 0 : number;
   }
 
-  // Hàm chuyển đổi ngày giờ sang ISO-8601 với offset +07:00
+  // Hàm chuyển đổi ngày giờ sang ISO-8601 với offset
   function toISOWithVNOffset(dateStr, timeStr = "00:00:00") {
     if (!dateStr) return "";
     
@@ -540,7 +540,7 @@ async function extractTransactions() {
     const [hours, minutes, seconds] = time.split(":");
     
     // Tạo ISO string: YYYY-MM-DDTHH:MM:SS+07:00
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}:${seconds.padStart(2, '0')}+07:00`;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}:${seconds.padStart(2, '0')}`;
   }
 
   // Hàm phân tích thông tin Facebook từ description

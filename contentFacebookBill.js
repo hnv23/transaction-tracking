@@ -120,12 +120,12 @@
         const result = await (async () => {
         for (let i = 0; i < 15; i++) {
             // 1. Kiểm tra "Không tìm thấy"
-            // const noResult = [...document.querySelectorAll('span')]
-            // .some(s => s.textContent.includes("Không tìm thấy giao dịch nào"));
-            // if (noResult) {
-            // console.log("Không tìm thấy giao dịch");
-            // return { found: false };
-            // }
+            const noResult = [...document.querySelectorAll('span')]
+            .some(s => s.textContent.includes("Không tìm thấy giao dịch nào"));
+            if (noResult) {
+            console.log("Không tìm thấy giao dịch");
+            return { found: false };
+            }
 
             // 2. Kiểm tra heading "Kết quả cho ..."
             const heading = [...document.querySelectorAll('div[role="heading"][aria-level="4"]')]
