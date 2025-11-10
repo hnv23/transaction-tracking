@@ -1109,10 +1109,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                   }
                 );
 
-                // Timeout safety sau 60 giây
+                // Timeout safety sau 90 giây
                 setTimeout(() => {
                   reject(new Error("Message timeout"));
-                }, 60000);
+                }, 90000);
               });
 
               // Gửi kết quả về n8n webhook nếu thành công
