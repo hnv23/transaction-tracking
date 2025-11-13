@@ -144,12 +144,13 @@ async function handleLoginAndGetTransactions(
 
       case "ACCOUNT_DETAIL_WITH_DATA":
         // Đã có data, lấy transactions
-        const transactions = await extractTransactions();
+        const data = await extractTransactions();
         ACBFlowState.clear();
         return {
           success: true,
-          transactions: transactions,
-          message: `Đã lấy ${transactions.length} giao dịch`,
+          transactions: data.transactions,
+          valid: data.valid,
+          message: `Đã lấy ${data.transactions.length} giao dịch`,
         };
 
       default:
@@ -363,130 +364,6 @@ async function filterAndSubmitByDate(date) {
 }
 
 // ========== TRANSACTION EXTRACTION ==========
-// async function extractTransactions() {
-//   console.log("Extracting transactions from detail page...");
-
-//   // Đợi bảng giao dịch xuất hiện
-//   await waitForElement("#table1", 10000);
-
-//   const transactions = [];
-//   const table = document.getElementById("table1");
-
-//   if (!table) {
-//     console.error("Table with id 'table1' not found");
-//     return transactions;
-//   }
-
-//   const rows = table.querySelectorAll("tr");
-//   console.log(`Found ${rows.length} rows in transaction table`);
-
-//   // Hàm phân tích thông tin Facebook từ description
-//   function parseFacebookPayment(description) {
-//     const fbInfo = {
-//       cardLastDigits: "",
-//       fbTransactionCode: "",
-//       fbTransactionLast3: "",
-//       exactTransactionTime: ""
-//     };
-
-//     // Kiểm tra xem có phải giao dịch Facebook không
-//     if (!description.includes("GD TAI FACEBK *")) {
-//       return fbInfo;
-//     }
-
-//     // Trích xuất số đuôi thẻ (4 số cuối của dãy bắt đầu bằng số và có XX)
-//     const cardMatch = description.match(/\d{4}XX(\d{4})/);
-//     if (cardMatch) {
-//       fbInfo.cardLastDigits = cardMatch[1]; // Lấy 4 số cuối từ capturing group: 6176 hoặc 0123
-//     }
-
-//     // Trích xuất mã giao dịch Facebook (sau "FACEBK *" và trước khoảng trắng/TRACE)
-//     const fbCodeMatch = description.match(/FACEBK\s*\*\s*([A-Z0-9]+)/);
-//     if (fbCodeMatch) {
-//       fbInfo.fbTransactionCode = fbCodeMatch[1]; // Ví dụ: HA7J53ZYA2
-//       fbInfo.fbTransactionLast3 = fbCodeMatch[1].slice(-3); // 3 ký tự cuối: YA2
-//     }
-
-//     // Trích xuất thời gian chính xác (định dạng DD/MM/YYYYHHMMSS -> DD/MM/YYYY HH:MM:SS)
-//     const timeMatch = description.match(/(\d{2}\/\d{2}\/\d{4})(\d{2})(\d{2})(\d{2})/);
-//     if (timeMatch) {
-//       const date = timeMatch[1]; // 11/10/2025
-//       const hours = timeMatch[2]; // 15
-//       const minutes = timeMatch[3]; // 53
-//       const seconds = timeMatch[4]; // 42
-//       fbInfo.exactTransactionTime = `${date} ${hours}:${minutes}:${seconds}`; // 11/10/2025 15:53:42
-//     }
-
-//     return fbInfo;
-//   }
-
-//   // Bỏ qua header row (index 0)
-//   for (let i = 1; i < rows.length; i++) {
-//     const row = rows[i];
-//     const cells = row.querySelectorAll("td");
-
-//     // Kiểm tra xem đây có phải hàng dữ liệu chính (có 6 cột)
-//     if (cells.length === 6) {
-//       // Lấy ngày hiệu lực, ngày giao dịch, số GD
-//       const effectiveDate = cells[0]?.textContent?.trim() || "";
-//       const transactionDate = cells[1]?.textContent?.trim() || "";
-//       const transactionNumber = cells[2]?.textContent?.trim() || "";
-
-//       // Lấy số tiền (loại bỏ ký tự &nbsp; và khoảng trắng)
-//       const debitText = cells[3]?.textContent?.trim().replace(/\s+/g, "") || "";
-//       const creditText =
-//         cells[4]?.textContent?.trim().replace(/\s+/g, "") || "";
-//       const balanceText =
-//         cells[5]?.textContent?.trim().replace(/\s+/g, "") || "";
-
-//       // Lấy mô tả từ hàng tiếp theo (nếu có)
-//       let description = "";
-//       if (i + 1 < rows.length) {
-//         const nextRow = rows[i + 1];
-//         const nextCells = nextRow.querySelectorAll("td");
-
-//         // Hàng mô tả thường có class "acctSum" hoặc colspan
-//         if (nextCells.length > 0) {
-//           const descCell = nextRow.querySelector("td.acctSum");
-//           if (descCell) {
-//             description = descCell.textContent?.trim() || "";
-//             i++; // Skip hàng mô tả ở lần lặp tiếp theo
-//           }
-//         }
-//       }
-
-//       // Chỉ thêm giao dịch nếu có ngày hiệu lực và có tiền
-//       if (effectiveDate && (debitText || creditText)) {
-//         // Phân tích thông tin Facebook payment
-//         const fbInfo = parseFacebookPayment(description);
-
-//         const transaction = {
-//           effectiveDate: effectiveDate,
-//           transactionDate: transactionDate,
-//           transactionNumber: transactionNumber,
-//           debit: debitText === "&nbsp;" || debitText === "" ? "" : debitText,
-//           credit:
-//             creditText === "&nbsp;" || creditText === "" ? "" : creditText,
-//           balance:
-//             balanceText === "&nbsp;" || balanceText === "" ? "" : balanceText,
-//           description: description,
-//           cardLastDigits: fbInfo.cardLastDigits,
-//           fbTransactionCode: fbInfo.fbTransactionCode,
-//           fbTransactionLast3: fbInfo.fbTransactionLast3,
-//           exactTransactionTime: fbInfo.exactTransactionTime
-//         };
-
-//         transactions.push(transaction);
-//         // console.log(`Transaction ${transactions.length}:`, transaction);
-//       }
-//     }
-//   }
-
-//   console.log(`Successfully extracted ${transactions.length} transactions`);
-//   // console.table(transactions);
-//   return transactions;
-// }
-
 async function extractTransactions() {
   console.log("Extracting transactions from detail page...");
 
@@ -498,12 +375,54 @@ async function extractTransactions() {
 
   if (!table) {
     console.error("Table with id 'table1' not found");
-    return transactions;
+    return {
+      transactions: transactions,
+      valid: validation.valid
+    };  
   }
 
   const rows = table.querySelectorAll("tr");
   console.log(`Found ${rows.length} rows in transaction table`);
 
+  // ========== VALIDATION TRACKING ==========
+  const validation = {
+    valid: true,
+    errors: [],
+    warnings: [],
+    
+    // Lấy từ HTML
+    endBalance: null,
+    totalDebit: null,
+    totalCredit: null,
+    
+    // Tính từ transactions
+    calculatedTotalDebit: 0,
+    calculatedTotalCredit: 0
+  };
+
+  // ========== EXTRACT SUMMARY INFO FROM HTML ==========
+  // Tìm "Số dư cuối"
+  const endBalanceText = document.body.textContent.match(/Số dư cuối:\s*([\d.,]+)/);
+  if (endBalanceText) {
+    validation.endBalance = parseAmount(endBalanceText[1]);
+    console.log("Found end balance:", validation.endBalance);
+  }
+
+  // Tìm "Tổng rút ra" (Debit)
+  const totalDebitText = document.body.textContent.match(/Tổng rút ra:\s*([\d.,]+)/);
+  if (totalDebitText) {
+    validation.totalDebit = parseAmount(totalDebitText[1]);
+    console.log("Found total debit:", validation.totalDebit);
+  }
+
+  // Tìm "Tổng gửi vào" (Credit)
+  const totalCreditText = document.body.textContent.match(/Tổng gửi vào:\s*([\d.,]+)/);
+  if (totalCreditText) {
+    validation.totalCredit = parseAmount(totalCreditText[1]);
+    console.log("Found total credit:", validation.totalCredit);
+  }
+
+  // ========== HELPER FUNCTIONS ==========
   // Hàm chuyển đổi string số tiền sang number
   function parseAmount(amountStr) {
     if (!amountStr || amountStr === "&nbsp;" || amountStr === "") {
@@ -620,6 +539,11 @@ async function extractTransactions() {
 
       // Chỉ thêm giao dịch nếu có ngày hiệu lực và có tiền
       if (effectiveDate && (debitText || creditText)) {
+
+        // Cộng dồn để so sánh với tổng
+        validation.calculatedTotalDebit += parseAmount(debitText);
+        validation.calculatedTotalCredit += parseAmount(creditText);
+
         // Phân tích thông tin Facebook payment
         const fbInfo = parseFacebookPayment(description);
 
@@ -644,9 +568,61 @@ async function extractTransactions() {
     }
   }
 
+  // ========== VALIDATION 1: Total Debit (Tổng gửi vào) ==========
+  if (validation.totalDebit !== null) {
+    const debitDiff = Math.abs(validation.calculatedTotalDebit - validation.totalDebit);
+    if (debitDiff > 0.01) {
+      validation.errors.push(
+        `Total Debit mismatch: Calculated ${validation.calculatedTotalDebit.toFixed(2)}, ` +
+        `HTML shows ${validation.totalDebit.toFixed(2)}, Diff: ${debitDiff.toFixed(2)}`
+      );
+      validation.valid = false;
+    } else {
+      console.log("✅ Total Debit matches!");
+    }
+  }
+
+  // ========== VALIDATION 2: Total Credit (Tổng rút ra) ==========
+  if (validation.totalCredit !== null) {
+    const creditDiff = Math.abs(validation.calculatedTotalCredit - validation.totalCredit);
+    if (creditDiff > 0.01) {
+      validation.errors.push(
+        `Total Credit mismatch: Calculated ${validation.calculatedTotalCredit.toFixed(2)}, ` +
+        `HTML shows ${validation.totalCredit.toFixed(2)}, Diff: ${creditDiff.toFixed(2)}`
+      );
+      validation.valid = false;
+    } else {
+      console.log("✅ Total Credit matches!");
+    }
+  }
+
+  // ========== VALIDATION 3: End Balance (Số dư cuối) ==========
+  if (validation.endBalance !== null && transactions.length > 0) {
+    const lastTransactionBalance = transactions[transactions.length - 1].balance;
+    const endBalanceDiff = Math.abs(lastTransactionBalance - validation.endBalance);
+    
+    if (endBalanceDiff > 0.01) {
+      validation.errors.push(
+        `End Balance mismatch: Last transaction balance ${lastTransactionBalance.toFixed(2)}, ` +
+        `HTML shows ${validation.endBalance.toFixed(2)}, Diff: ${endBalanceDiff.toFixed(2)}`
+      );
+      validation.valid = false;
+    } else {
+      console.log("✅ End Balance matches!");
+    }
+  }
+
+  if (validation.errors.length > 0) {
+    console.error("\n❌ ERRORS:");
+    // validation.errors.forEach((err, idx) => console.error(`  ${idx + 1}. ${err}`));
+  }
+
   console.log(`Successfully extracted ${transactions.length} transactions`);
   // console.table(transactions);
-  return transactions;
+  return {
+    transactions: transactions,
+    valid: validation.valid
+  };
 }
 
 // ========== HELPER FUNCTIONS ==========
@@ -691,22 +667,7 @@ async function getCaptchaBase64() {
   });
 }
 
-// async function solveCaptcha(blob) {
-//   const arrayBuffer = await blob.arrayBuffer();
-//   const uint8Array = new Uint8Array(arrayBuffer);
-
-//   const response = await chrome.runtime.sendMessage({
-//     action: "solveCaptchaACB",
-//     imageData: Array.from(uint8Array),
-//     mimeType: blob.type,
-//   });
-
-//   if (response?.success) {
-//     return response.text;
-//   }
-//   throw new Error(response?.message || "Không thể giải captcha");
-// }
-
+// giải captcha bằng cách gửi sang background
 async function solveCaptcha(captchaData) {
   const response = await chrome.runtime.sendMessage({
     action: "solveCaptchaACB",
@@ -862,7 +823,7 @@ async function waitAndGetTransactions(state) {
         console.log("Transaction data detected, extracting...");
         await new Promise((r) => setTimeout(r, 2000));
 
-        const transactions = await extractTransactions();
+        const data = await extractTransactions();
         // Lấy giá trị từ input FromDate và ToDate
         const fromDateInput = document.querySelector('input[name="FromDate"]');
         const toDateInput = document.querySelector('input[name="ToDate"]');
@@ -879,7 +840,8 @@ async function waitAndGetTransactions(state) {
             fromDate: fromDate,
             toDate: toDate,
             accountNumber: state.accountNumber,
-            transactions: transactions,
+            transactions: data.transactions,
+            valid: data.valid,
             success: true,
           },
           (response) => {
